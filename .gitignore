@@ -1,6 +1,6 @@
 .venv/
 keplerData/
 mastDownload/
-tessLightCurveData/
 __pycache__/
 .ipynb_checkpoints/
+tessLightCurveData/fits/
