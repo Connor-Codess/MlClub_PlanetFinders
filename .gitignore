@@ -1,0 +1,13 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# macOS
+.DS_Store
+
+# Downloaded and generated data
+*.fits
+data/raw/kepler_lightcurves/
+data/inspection/
+data/manifests/

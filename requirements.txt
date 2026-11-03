@@ -1,0 +1,5 @@
+numpy
+pandas
+astropy
+astroquery==0.4.11
+boto3
