@@ -1,0 +1,183 @@
+{
+  "run": "runs/ft_pretrained",
+  "encoder": "pretrained",
+  "best_epoch": 13,
+  "tess_val": {
+    "macro_f1": 0.6829810771331444,
+    "bal_acc": 0.7599658640817177
+  },
+  "tess_test": {
+    "n": 892,
+    "counts": {
+      "planet": 133,
+      "candidate": 445,
+      "false_positive": 90,
+      "no_planet": 224
+    },
+    "macro_f1": 0.6629828376172743,
+    "macro_f1_ci": [
+      0.6329032170441324,
+      0.6942891699848721
+    ],
+    "bal_acc": 0.7469916598612637,
+    "bal_acc_ci": [
+      0.7165819954361793,
+      0.7776547467856993
+    ],
+    "pr_auc": {
+      "planet": 0.6040565905407421,
+      "candidate": 0.8468326080332701,
+      "false_positive": 0.5569273502232036,
+      "no_planet": 0.9899649109925396
+    },
+    "fp_recall_at_90_precision": 0.1,
+    "fp_vs_planet_pr_auc": 0.567893214001224,
+    "fp_vs_planet_pr_auc_ci": [
+      0.4689830419357708,
+      0.6640450539421224
+    ],
+    "no_planet_pr_auc_real_only": 0.22402468957750035,
+    "confusion": [
+      [
+        105,
+        18,
+        10,
+        0
+      ],
+      [
+        129,
+        213,
+        97,
+        6
+      ],
+      [
+        4,
+        18,
+        68,
+        0
+      ],
+      [
+        1,
+        5,
+        2,
+        216
+      ]
+    ]
+  },
+  "tess_test_future": {
+    "n": 132,
+    "counts": {
+      "planet": 5,
+      "candidate": 59,
+      "false_positive": 1,
+      "no_planet": 67
+    },
+    "macro_f1": 0.4780639803513791,
+    "macro_f1_ci": [
+      0.4300183887096482,
+      0.6685129047776063
+    ],
+    "bal_acc": 0.6860991651909942,
+    "bal_acc_ci": [
+      0.49460859686666137,
+      0.7929268955802393
+    ],
+    "pr_auc": {
+      "planet": 0.09886675824175824,
+      "candidate": 0.9598253768962899,
+      "false_positive": 1.0,
+      "no_planet": 0.998232521602514
+    },
+    "fp_recall_at_90_precision": 1.0,
+    "fp_vs_planet_pr_auc": 1.0,
+    "fp_vs_planet_pr_auc_ci": [
+      0.0,
+      1.0
+    ],
+    "no_planet_pr_auc_real_only": 0.1,
+    "confusion": [
+      [
+        1,
+        2,
+        2,
+        0
+      ],
+      [
+        11,
+        33,
+        15,
+        0
+      ],
+      [
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1,
+        66
+      ]
+    ]
+  },
+  "kepler_test": {
+    "n": 1608,
+    "counts": {
+      "planet": 259,
+      "candidate": 94,
+      "false_positive": 986,
+      "no_planet": 269
+    },
+    "macro_f1": 0.6783420668035871,
+    "macro_f1_ci": [
+      0.6507396046696994,
+      0.7063597918610544
+    ],
+    "bal_acc": 0.7235231375395084,
+    "bal_acc_ci": [
+      0.6941543533018871,
+      0.7536697682657278
+    ],
+    "pr_auc": {
+      "planet": 0.8997892589639108,
+      "candidate": 0.47725912684014116,
+      "false_positive": 0.9248123521205134,
+      "no_planet": 0.647493440084468
+    },
+    "fp_recall_at_90_precision": 0.9878296146044625,
+    "fp_vs_planet_pr_auc": 0.9945482537372837,
+    "fp_vs_planet_pr_auc_ci": [
+      0.9919371825455696,
+      0.9966349490592624
+    ],
+    "no_planet_pr_auc_real_only": 0.647493440084468,
+    "confusion": [
+      [
+        225,
+        32,
+        2,
+        0
+      ],
+      [
+        27,
+        55,
+        8,
+        4
+      ],
+      [
+        29,
+        38,
+        720,
+        199
+      ],
+      [
+        1,
+        0,
+        77,
+        191
+      ]
+    ]
+  }
+}

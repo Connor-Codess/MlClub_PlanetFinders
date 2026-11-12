@@ -1,0 +1,6 @@
+data/
+*.pt
+*.npz
+__pycache__/
+runs/smoke/
+runs/overfit/

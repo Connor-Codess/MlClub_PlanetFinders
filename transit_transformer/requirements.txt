@@ -1,0 +1,6 @@
+numpy
+pandas
+pyarrow
+huggingface_hub
+astropy
+torch

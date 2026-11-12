@@ -1,0 +1,5 @@
+runs/ft_pretrained finished: done; best TESS val macro-F1 0.683; 39.3 min
+runs/ft_random finished: done; best TESS val macro-F1 0.641; 32.7 min
+runs/ft_frozen finished: done; best TESS val macro-F1 0.650; 13.3 min
+runs/ft_none finished: done; best TESS val macro-F1 0.633; 4.8 min
+evaluation written
