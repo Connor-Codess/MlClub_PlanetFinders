@@ -2,7 +2,7 @@
 
 What it does (build guide Steps 8-9)
     Reads only the metadata columns of every data file written by pass 1 (the
-    byte channels are never downloaded; 8 files are read at a time), keeps
+    files are downloaded whole, 6 at a time, and deleted after reading), keeps
     them in Arrow and categorical form so a full build fits in a 16 GB
     runner, then writes:
 
@@ -78,8 +78,7 @@ def list_files(local: Path | None) -> dict[str, list[tuple[str, str]]]:
 SEGMENT_COLUMNS = [c for c in META_COLUMNS if c not in ("window_offsets", "window_coverage")]
 WINDOW_COLUMNS = ["file", "row", "segment_id", "star_key", "source", "split", "quality_tier", "var_ratio"]
 CATEGORICAL = ("file", "star_key", "source", "split", "dup_group", "part")
-READ_BLOCK_BYTES = 256 * 2**10
-READ_WORKERS = 8
+READ_WORKERS = 6
 
 
 def _split_file(table: pa.Table, repo_path: str) -> tuple[pa.Table, pa.Table]:
@@ -120,12 +119,19 @@ def _to_pandas(table: pa.Table) -> pd.DataFrame:
 
 def _read_file(read_path: str, repo_path: str, fs) -> tuple[pa.Table, pa.Table]:
     if fs is None:
-        table = pq.read_table(read_path, columns=META_COLUMNS)
-    else:
-        # Small blocks plus pre_buffer fetch only the metadata column chunks; with large
-        # blocks the byte channels in between are downloaded too (about 7x slower).
-        with fs.open(read_path, "rb", block_size=READ_BLOCK_BYTES) as handle:
-            table = pq.ParquetFile(handle, pre_buffer=True).read(columns=META_COLUMNS)
+        return _split_file(pq.read_table(read_path, columns=META_COLUMNS), repo_path)
+    # Download the whole file (one request) and read it locally. Reading the metadata
+    # column chunks remotely needs about three range requests per row group, about
+    # 55,000 for a full build, which runs into the Hub's request rate limits.
+    import tempfile
+
+    from huggingface_hub import hf_hub_download
+
+    repo_id = "/".join(read_path.split("/")[1:3])
+    with tempfile.TemporaryDirectory(dir=os.environ.get("RUNNER_TEMP")) as tmp:
+        local = hf_hub_download(repo_id, repo_path, repo_type="dataset", local_dir=tmp,
+                                token=os.environ.get("HF_TOKEN"))
+        table = pq.read_table(local, columns=META_COLUMNS)
     return _split_file(table, repo_path)
 
 

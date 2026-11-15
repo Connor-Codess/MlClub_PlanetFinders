@@ -93,7 +93,7 @@ jobs:
     needs: [plan, pass1]
     if: always() && needs.plan.result == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@v5
         with:

@@ -68,11 +68,13 @@ lightkurve's default quality bitmask (17087) and only requires finite time and f
 
 1. Done 2026-11-15: Kepler q15-q17 on the Hub.
 2. Done 2026-11-15: Step 0 reference catalogs on Hugging Face (nyu-planet-finders/reference-catalogs).
-3. In progress: Steps 1-11 are implemented in `pretrain_dataset/` and run by
-   `.github/workflows/build-pretrain-dataset.yml` (206 source files: 81 FFI, 107 2-min, 18 Kepler).
-   Trial on FFI s0001, 2-min s0001 and Kepler q17 first, then the full build. Check
-   `index/validation_report.md` in lc-pretrain for the Step 11 gates. One change from the guide: no
-   separate re-shuffle pass (Step 10); sampling order comes from the weighted window index.
+3. Steps 1-11 are implemented in `pretrain_dataset/` and run by
+   `.github/workflows/build-pretrain-dataset.yml`. Pass 1 finished 2026-11-15 for all 206 source files
+   (81 FFI, 107 2-min, 18 Kepler) with no failures; trial gates: 0 leaked stars, round trip 0.032 sigma.
+   The index pass was rewritten to fit a 16 GB runner; check `index/validation_report.md` in lc-pretrain
+   for the final gates. One change from the guide: no separate re-shuffle pass (Step 10); sampling order
+   comes from the weighted window index. A resumed build reuses the reference-catalogs revision already
+   in use (gate 4 checks this).
 4. Dataset cards for the 2-min and FFI repos.
 5. Faculty sponsor and Torch access.
 6. Injection pipeline, detector, injection-recovery validation; benchmark against Salinas et al. 2025.
