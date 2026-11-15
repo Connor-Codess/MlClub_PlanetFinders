@@ -56,6 +56,8 @@ Full plan with every decision and recommendation: [pretraining_dataset_build_gui
 | kepler-raw-lightcurves | Unbinned DR25 light curves for the 9,865 DR24 TCE stars plus the DR24 TCE table | Complete; for supervised Kepler work |
 | kepler-centroids | Centroids and pointing corrections, row-aligned with kepler-raw-lightcurves | Complete |
 | TESS_TCES | TOI list with 4 columns only | Superseded by reference-catalogs/toi_ephemerides |
+| lc-pretrain | Pretraining segments for train and validation stars, window index with weights, validation report | Built 2026-11-15 (v1) |
+| lc-heldout (private) | Same format for search_holdout, scoreboard_hosts and list_excluded stars, plus exclusions.parquet | Built 2026-11-15 (v1) |
 | reference-catalogs | TOI ephemerides (8,175), TESS EBs (4,584), Kepler EBs (2,876), Hawthorn duotransits (85), KIC-TIC crossmatch (207,617 KIC, 99.0% matched) | Built 2026-11-15 by `reference_catalogs/` via GitHub Actions; refreshed monthly |
 
 Time systems: TESS times are BTJD = BJD - 2457000; Kepler times are BKJD = BJD - 2454833;
@@ -68,13 +70,15 @@ lightkurve's default quality bitmask (17087) and only requires finite time and f
 
 1. Done 2026-11-15: Kepler q15-q17 on the Hub.
 2. Done 2026-11-15: Step 0 reference catalogs on Hugging Face (nyu-planet-finders/reference-catalogs).
-3. Steps 1-11 are implemented in `pretrain_dataset/` and run by
-   `.github/workflows/build-pretrain-dataset.yml`. Pass 1 finished 2026-11-15 for all 206 source files
-   (81 FFI, 107 2-min, 18 Kepler) with no failures; trial gates: 0 leaked stars, round trip 0.032 sigma.
-   The index pass was rewritten to fit a 16 GB runner; check `index/validation_report.md` in lc-pretrain
-   for the final gates. One change from the guide: no separate re-shuffle pass (Step 10); sampling order
-   comes from the weighted window index. A resumed build reuses the reference-catalogs revision already
-   in use (gate 4 checks this).
+3. Done 2026-11-15: lc-pretrain v1 built by `pretrain_dataset/` in GitHub Actions
+   (`.github/workflows/build-pretrain-dataset.yml`), all four Step 11 gates passing: 206 of 206 source
+   files accounted for, 0 star_keys in both repos, worst round-trip error 0.032 sigma, one catalog
+   revision (116cd81b). 17,401,706 light curves read, 17,151,144 segments written (250,562 dropped, almost
+   all too noisy), 4,173,056 stars. lc-pretrain holds 15.43M segments and 20.35M default windows
+   (FFI 11.43M, 2-min 1.44M, Kepler 7.49M windows); lc-heldout (private) holds 1.72M segments. Report:
+   `index/validation_report.md` in lc-pretrain. One change from the guide: no separate re-shuffle pass
+   (Step 10); sampling order comes from the weighted window index. A resumed build reuses the
+   reference-catalogs revision already in use.
 4. Dataset cards for the 2-min and FFI repos.
 5. Faculty sponsor and Torch access.
 6. Injection pipeline, detector, injection-recovery validation; benchmark against Salinas et al. 2025.
