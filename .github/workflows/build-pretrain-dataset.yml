@@ -37,12 +37,12 @@ jobs:
       catalog_revision: ${{ steps.plan.outputs.catalog_revision }}
       max_row_groups: ${{ steps.plan.outputs.max_row_groups }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           sparse-checkout: |
             pretrain_dataset
             tests
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -67,10 +67,10 @@ jobs:
         include: ${{ fromJSON(needs.plan.outputs.matrix) }}
     name: pass1 ${{ matrix.source }} ${{ matrix.file }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           sparse-checkout: pretrain_dataset
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -95,10 +95,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           sparse-checkout: pretrain_dataset
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip

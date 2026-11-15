@@ -41,7 +41,7 @@ jobs:
       HF_REPO: nyu-planet-finders/reference-catalogs
     steps:
       - name: Check out the code only (the light-curve CSVs are not needed)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           sparse-checkout: |
             reference_catalogs
@@ -49,7 +49,7 @@ jobs:
           sparse-checkout-cone-mode: true
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
