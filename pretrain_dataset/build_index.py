@@ -2,7 +2,9 @@
 
 What it does (build guide Steps 8-9)
     Reads only the metadata columns of every data file written by pass 1 (the
-    byte channels are never downloaded), then writes:
+    byte channels are never downloaded; 8 files are read at a time), keeps
+    them in Arrow and categorical form so a full build fits in a 16 GB
+    runner, then writes:
 
     index/windows_train.parquet, index/windows_validation.parquet   (lc-pretrain)
     index/windows_heldout.parquet                                    (lc-heldout)
@@ -39,6 +41,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 from . import config
@@ -71,25 +75,85 @@ def list_files(local: Path | None) -> dict[str, list[tuple[str, str]]]:
     return out
 
 
-def read_metadata(files: list[tuple[str, str]], local: bool) -> pd.DataFrame:
-    frames = []
+SEGMENT_COLUMNS = [c for c in META_COLUMNS if c not in ("window_offsets", "window_coverage")]
+WINDOW_COLUMNS = ["file", "row", "segment_id", "star_key", "source", "split", "quality_tier", "var_ratio"]
+CATEGORICAL = ("file", "star_key", "source", "split", "dup_group", "part")
+READ_BLOCK_BYTES = 256 * 2**10
+READ_WORKERS = 8
+
+
+def _split_file(table: pa.Table, repo_path: str) -> tuple[pa.Table, pa.Table]:
+    """One pass-1 file's metadata as (segments without list columns, one row per window)."""
+    n = table.num_rows
+    lengths = pc.list_value_length(table["window_offsets"]).to_numpy(zero_copy_only=False).astype(np.int64)
+    segments = (table.select(SEGMENT_COLUMNS)
+                .append_column("file", pa.array([repo_path] * n, pa.string()))
+                .append_column("row", pa.array(np.arange(n, dtype=np.int64)))
+                .append_column("n_windows", pa.array(lengths.astype(np.int16))))
+    parents = np.repeat(np.arange(n), lengths)
+    starts = np.concatenate([[0], np.cumsum(lengths)[:-1]]) if n else np.zeros(0, np.int64)
+    windows = segments.select(WINDOW_COLUMNS).take(pa.array(parents))
+    windows = (windows
+               .append_column("window_index", pa.array((np.arange(parents.size) - starts[parents]).astype(np.int16)))
+               .append_column("start_offset", pc.cast(pc.list_flatten(table["window_offsets"]), pa.int32()))
+               .append_column("coverage", pc.cast(pc.list_flatten(table["window_coverage"]), pa.float32())))
+    return segments, windows
+
+
+def _to_pandas(table: pa.Table) -> pd.DataFrame:
+    """Convert with repeated strings as categoricals and unique strings as Arrow strings.
+
+    A full build has about 17 million segments and 23 million windows; with Python
+    string objects that would not fit in a 16 GB GitHub runner.
+    """
+    for name in CATEGORICAL:
+        if name in table.column_names:
+            index = table.column_names.index(name)
+            table = table.set_column(index, name, pc.dictionary_encode(table[name]).combine_chunks())
+    frame = table.to_pandas(types_mapper={pa.string(): pd.ArrowDtype(pa.string()),
+                                          pa.large_string(): pd.ArrowDtype(pa.string())}.get)
+    for name in CATEGORICAL:
+        if name in frame:
+            frame[name] = frame[name].cat.remove_unused_categories()
+    return frame
+
+
+def _read_file(read_path: str, repo_path: str, fs) -> tuple[pa.Table, pa.Table]:
+    if fs is None:
+        table = pq.read_table(read_path, columns=META_COLUMNS)
+    else:
+        # Small blocks plus pre_buffer fetch only the metadata column chunks; with large
+        # blocks the byte channels in between are downloaded too (about 7x slower).
+        with fs.open(read_path, "rb", block_size=READ_BLOCK_BYTES) as handle:
+            table = pq.ParquetFile(handle, pre_buffer=True).read(columns=META_COLUMNS)
+    return _split_file(table, repo_path)
+
+
+def read_metadata(files: list[tuple[str, str]], local: bool, part: str) -> tuple[pa.Table, pa.Table]:
+    """Read the metadata columns of every file in one repo; returns (segments, windows) as Arrow."""
+    from concurrent.futures import ThreadPoolExecutor
+
     fs = None
     if not local:
         from huggingface_hub import HfFileSystem
 
         fs = HfFileSystem(token=os.environ.get("HF_TOKEN"))
-    for read_path, repo_path in files:
-        if local:
-            table = pq.read_table(read_path, columns=META_COLUMNS)
-        else:
-            with fs.open(read_path, "rb", block_size=8 * 2**20) as handle:
-                table = pq.ParquetFile(handle).read(columns=META_COLUMNS)
-        frame = table.to_pandas()
-        frame["file"] = repo_path
-        frame["row"] = np.arange(len(frame), dtype=np.int64)
-        frames.append(frame)
-        LOG.info("Read metadata of %s (%d rows)", repo_path, len(frame))
-    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=META_COLUMNS + ["file", "row"])
+    segment_parts, window_parts = [], []
+    with ThreadPoolExecutor(max_workers=1 if local else READ_WORKERS) as pool:
+        futures = [pool.submit(_read_file, read_path, repo_path, fs) for read_path, repo_path in files]
+        for (_, repo_path), future in zip(files, futures):
+            segments, windows = future.result()
+            segment_parts.append(segments.append_column("part", pa.array([part] * segments.num_rows, pa.string())))
+            window_parts.append(windows)
+            LOG.info("Read metadata of %s (%d segments, %d windows)", repo_path, segments.num_rows, windows.num_rows)
+    if not segment_parts:
+        from .build_segments import SCHEMA
+
+        empty = pa.schema([SCHEMA.field(c) for c in META_COLUMNS]).empty_table()
+        empty_seg, empty_win = _split_file(empty, "")
+        return empty_seg.append_column("part", pa.array([], pa.string())), empty_win
+    return (pa.concat_tables(segment_parts, promote_options="permissive"),
+            pa.concat_tables(window_parts, promote_options="permissive"))
 
 
 def explode_windows(segments: pd.DataFrame) -> pd.DataFrame:
@@ -107,16 +171,18 @@ def explode_windows(segments: pd.DataFrame) -> pd.DataFrame:
 def add_weights(windows: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     out = []
     thresholds = {}
-    for split, group in windows.groupby("split", sort=False):
+    for split, group in windows.groupby("split", sort=False, observed=True):
         group = group.copy()
         per_source = group["source"].value_counts()
+        per_source = per_source[per_source > 0]
         present = {s: config.SOURCE_SHARES[s] for s in per_source.index}
         total_share = sum(present.values())
-        group["w_source"] = group["source"].map(lambda s: present[s] / total_share / per_source[s] * len(group))
-        star_windows = group.groupby("star_key")["segment_id"].transform("size")
+        source_weight = {s: present[s] / total_share / per_source[s] * len(group) for s in present}
+        group["w_source"] = group["source"].astype(str).map(source_weight).astype(np.float64)
+        star_windows = group.groupby("star_key", observed=True)["segment_id"].transform("size")
         group["w_star"] = np.minimum(1.0, config.STAR_WINDOW_CAP / star_windows)
         group["w_var"] = 1.0
-        for source, part in group.groupby("source"):
+        for source, part in group.groupby("source", observed=True):
             cut = float(part["var_ratio"].quantile(1 - config.VARIABILITY_TOP_FRACTION))
             thresholds[f"{split}/{source}"] = round(cut, 4)
             group.loc[part.index[part["var_ratio"] >= cut], "w_var"] = config.VARIABILITY_WEIGHT
@@ -133,33 +199,44 @@ def add_weights(windows: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
 def build(local: Path | None, out_dir: Path) -> dict:
     files = list_files(local)
     out_dir.mkdir(parents=True, exist_ok=True)
-    pretrain = read_metadata(files["pretrain"], local is not None)
-    heldout = read_metadata(files["heldout"], local is not None)
+    pre_segments, pre_windows = read_metadata(files["pretrain"], local is not None, "pretrain")
+    held_segments, held_windows = read_metadata(files["heldout"], local is not None, "heldout")
 
-    windows, thresholds = add_weights(explode_windows(pretrain))
+    windows, thresholds = add_weights(_to_pandas(pre_windows))
+    del pre_windows
     for split in config.PRETRAIN_SPLITS:
         windows[windows["split"] == split].to_parquet(out_dir / f"windows_{split}.parquet", index=False)
-    heldout_windows = explode_windows(heldout)
-    heldout_windows.to_parquet(out_dir / "windows_heldout.parquet", index=False)
+    windows_by_split = windows.groupby(["split", "source"], observed=True).size().unstack(fill_value=0).to_dict()
+    del windows
+    pq.write_table(held_windows, out_dir / "windows_heldout.parquet")
+    del held_windows
 
-    everything = pd.concat([pretrain.assign(part="pretrain"), heldout.assign(part="heldout")], ignore_index=True)
-    star_windows = everything.assign(n_windows=everything["window_offsets"].map(len))
-    stars = star_windows.pivot_table(index=["star_key", "split"], columns="source", values="n_windows",
-                                     aggfunc=["size", "sum"], fill_value=0)
-    stars.columns = [f"{'segments' if a == 'size' else 'windows'}_{s}" for a, s in stars.columns]
+    everything = _to_pandas(pa.concat_tables([pre_segments, held_segments], promote_options="permissive"))
+    leaked = sorted(set(pc.unique(pre_segments["star_key"]).to_pylist())
+                    & set(pc.unique(held_segments["star_key"]).to_pylist()))
+    del pre_segments, held_segments
+
+    stars = (everything.groupby(["star_key", "split", "source"], observed=True)["n_windows"]
+             .agg(segments="size", windows="sum").unstack("source", fill_value=0))
+    stars.columns = [f"{kind}_{source}" for kind, source in stars.columns]
     stars = stars.reset_index()
+    stars["star_key"] = stars["star_key"].astype(str)
+    stars["split"] = stars["split"].astype(str)
     stars.to_parquet(out_dir / "stars.parquet", index=False)
 
     tess = everything[everything["dup_group"].notna()]
-    dup_pairs = int((tess.groupby("dup_group")["source"].nunique() > 1).sum())
-    leaked = sorted(set(pretrain["star_key"]) & set(heldout["star_key"]))
+    dup_pairs = int((tess.groupby("dup_group", observed=True)["source"].nunique() > 1).sum())
+
+    def counts(*keys):
+        return everything.groupby(list(keys), observed=True).size().unstack(fill_value=0).to_dict()
+
     summary = {
         "build_version": config.BUILD_VERSION,
         "files": {"pretrain": len(files["pretrain"]), "heldout": len(files["heldout"])},
-        "segments": everything.groupby(["part", "source"]).size().unstack(fill_value=0).to_dict(),
-        "segments_by_split": everything.groupby(["split", "source"]).size().unstack(fill_value=0).to_dict(),
-        "windows_by_split": windows.groupby(["split", "source"]).size().unstack(fill_value=0).to_dict(),
-        "quality_tiers": everything.groupby(["source", "quality_tier"]).size().unstack(fill_value=0).to_dict(),
+        "segments": counts("part", "source"),
+        "segments_by_split": counts("split", "source"),
+        "windows_by_split": windows_by_split,
+        "quality_tiers": counts("source", "quality_tier"),
         "stars": int(stars["star_key"].nunique()),
         "ffi_2min_duplicate_pairs": dup_pairs,
         "variability_thresholds": thresholds,

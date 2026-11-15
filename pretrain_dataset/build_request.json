@@ -1,5 +1,5 @@
 {
-  "note": "Editing and pushing this file starts the Build pretraining dataset workflow. Already-processed files are skipped, so pushing again resumes a partial build or picks up new Kepler quarters. Full build: all sources and files (trial files from the first run are skipped).",
+  "note": "Editing and pushing this file starts the Build pretraining dataset workflow. Already-processed files are skipped, so pushing again resumes a partial build or picks up new Kepler quarters. All 206 source files are processed; this push rebuilds the index, checks and cards only.",
   "sources": [
     "ffi",
     "2min",
