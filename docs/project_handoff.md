@@ -56,7 +56,7 @@ Full plan with every decision and recommendation: [pretraining_dataset_build_gui
 | kepler-raw-lightcurves | Unbinned DR25 light curves for the 9,865 DR24 TCE stars plus the DR24 TCE table | Complete; for supervised Kepler work |
 | kepler-centroids | Centroids and pointing corrections, row-aligned with kepler-raw-lightcurves | Complete |
 | TESS_TCES | TOI list with 4 columns only | Superseded by reference-catalogs/toi_ephemerides |
-| reference-catalogs | TOI ephemerides, TESS and Kepler EB catalogs, Hawthorn duotransits, KIC-TIC crossmatch | Built by `reference_catalogs/` in this repo |
+| reference-catalogs | TOI ephemerides (8,175), TESS EBs (4,584), Kepler EBs (2,876), Hawthorn duotransits (85), KIC-TIC crossmatch (207,617 KIC, 99.0% matched) | Built 2026-11-15 by `reference_catalogs/` via GitHub Actions; refreshed monthly |
 
 Time systems: TESS times are BTJD = BJD - 2457000; Kepler times are BKJD = BJD - 2454833;
 BTJD = BKJD - 2167. Centroid plate scales: TESS ~21"/pixel, Kepler 3.98"/pixel.
@@ -67,7 +67,7 @@ lightkurve's default quality bitmask (17087) and only requires finite time and f
 ## Open items
 
 1. Finish Kepler q15-q17 in TIKE (kepler-llc should reach about 2.9M rows).
-2. Run the reference-catalogs workflow and check its row counts (Step 0).
+2. Done 2026-11-15: Step 0 reference catalogs on Hugging Face (nyu-planet-finders/reference-catalogs).
 3. Freeze the exclusion list (build guide Steps 1-2), run a pass-1 trial on one FFI sector, one 2-min
    sector and one Kepler quarter, check the Step 11 hard gates, then run the full build.
 4. Dataset cards for the 2-min and FFI repos.
