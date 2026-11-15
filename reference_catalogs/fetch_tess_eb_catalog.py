@@ -8,8 +8,8 @@ What it does
         primary_width_phase, primary_depth, secondary_width_phase,
         secondary_depth, secondary_phase, primary_duration_h, sectors
 
-    The table is read through TAPVizieR, with the CDS archive files (ReadMe
-    plus tess-ebs.dat) as a fallback. BJD0 in this catalog is already
+    The table is read from the CDS archive files (ReadMe plus tess-ebs.dat),
+    with TAPVizieR as a fallback. BJD0 in this catalog is already
     BJD - 2457000, i.e. BTJD. Eclipse widths
     are in phase units; primary_duration_h = width x period x 24. The
     polychain-fit values are used, falling back to the 2-Gaussian fit when the

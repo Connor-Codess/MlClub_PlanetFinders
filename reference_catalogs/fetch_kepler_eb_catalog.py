@@ -2,8 +2,8 @@
 
 What it does
     Retrieves the main catalog table of VizieR J/AJ/151/68 (the final Kepler
-    EB catalog, about 2,900 systems from Q0-Q17) through TAPVizieR, falling
-    back to the CDS archive files, and adds standardized columns:
+    EB catalog, about 2,900 systems from Q0-Q17) from the CDS archive files
+    (ReadMe plus catalog.dat), falling back to TAPVizieR, and adds standardized columns:
 
         kic_id, period_d, t0_btjd, t0_reference, morphology, kepmag,
         primary_width_phase, primary_depth, secondary_width_phase,

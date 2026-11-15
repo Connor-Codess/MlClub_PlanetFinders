@@ -175,43 +175,31 @@ TAPVIZIER_URL = "https://tapvizier.cds.unistra.fr/TAPVizieR/tap/sync"
 
 
 def fetch_vizier_table(table: str, cds_dirs: list[str], data_file: str, min_rows: int) -> tuple[pd.DataFrame, str]:
-    """Download a whole VizieR table, trying TAPVizieR first and the CDS archive files second.
+    """Download a whole VizieR table from the CDS archive files, or from TAPVizieR as a fallback.
 
     table      VizieR table name, e.g. "J/ApJS/258/16/tess-ebs"
     cds_dirs   archive directories holding ReadMe and the data file
     data_file  data file name inside those directories, e.g. "tess-ebs.dat"
     min_rows   a result with fewer rows is treated as truncated and the next source is tried
 
-    Returns the table and a short description of where it came from.
+    The static archive files are tried first because they are small and fast;
+    every request uses a short timeout so an unresponsive service fails over
+    within minutes. Returns the table and a short description of its origin.
     """
     import gzip
     import io
     import tempfile
 
-    errors: list[str] = []
-    try:
-        response = http_request("GET", TAPVIZIER_URL, params={
-            "REQUEST": "doQuery", "LANG": "ADQL", "FORMAT": "csv", "MAXREC": "2000000",
-            "QUERY": f'SELECT * FROM "{table}"',
-        })
-        df = pd.read_csv(io.StringIO(response.text), low_memory=False)
-        if len(df) >= min_rows:
-            LOG.info("TAPVizieR returned %d rows for %s", len(df), table)
-            return df, f"TAPVizieR {table}"
-        errors.append(f"TAPVizieR returned only {len(df)} rows")
-    except Exception as exc:
-        errors.append(f"TAPVizieR: {exc}")
-    LOG.warning("TAPVizieR did not deliver %s (%s); trying the CDS archive", table, errors[-1])
-
     from astropy.io import ascii as astropy_ascii
 
+    errors: list[str] = []
     for base in cds_dirs:
         try:
-            readme = http_request("GET", f"{base}/ReadMe", retries=2).content
+            readme = http_request("GET", f"{base}/ReadMe", timeout=60, retries=2).content
             content = None
             for name in (f"{data_file}.gz", data_file):
                 try:
-                    raw = http_request("GET", f"{base}/{name}", retries=2).content
+                    raw = http_request("GET", f"{base}/{name}", timeout=120, retries=2).content
                     content = gzip.decompress(raw) if name.endswith(".gz") else raw
                     break
                 except Exception as exc:
@@ -230,6 +218,20 @@ def fetch_vizier_table(table: str, cds_dirs: list[str], data_file: str, min_rows
             errors.append(f"{base}: only {len(df)} rows")
         except Exception as exc:
             errors.append(f"{base}: {exc}")
+        LOG.warning("CDS archive %s did not deliver %s: %s", base, data_file, errors[-1])
+
+    try:
+        response = http_request("GET", TAPVIZIER_URL, timeout=120, retries=2, params={
+            "REQUEST": "doQuery", "LANG": "ADQL", "FORMAT": "csv", "MAXREC": "2000000",
+            "QUERY": f'SELECT * FROM "{table}"',
+        })
+        df = pd.read_csv(io.StringIO(response.text), low_memory=False)
+        if len(df) >= min_rows:
+            LOG.info("TAPVizieR returned %d rows for %s", len(df), table)
+            return df, f"TAPVizieR {table}"
+        errors.append(f"TAPVizieR returned only {len(df)} rows")
+    except Exception as exc:
+        errors.append(f"TAPVizieR: {exc}")
     raise RuntimeError(f"Could not download {table}: " + " | ".join(errors))
 
 
