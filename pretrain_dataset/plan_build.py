@@ -4,8 +4,9 @@ What it does
     Reads pretrain_dataset/build_request.json, lists the source files on the
     Hub, removes files that already have a pass-1 stats file in lc-pretrain
     (when skip_existing is true, so re-running the workflow resumes a partial
-    build or picks up newly uploaded Kepler quarters), pins the current
-    revision of reference-catalogs, and writes the Step 2 exclusion list.
+    build or picks up newly uploaded Kepler quarters), pins the revision of
+    reference-catalogs (the one already used by this build if any files are
+    done, otherwise the current one), and writes the Step 2 exclusion list.
 
     In GitHub Actions it writes three outputs: matrix (JSON list of
     {"source", "file"}), count, and catalog_revision.
@@ -57,8 +58,25 @@ def plan(request: dict) -> tuple[list[dict], str]:
             if f"{source}_{Path(name).stem}" in done:
                 continue
             matrix.append({"source": source, "file": name})
-    revision = api.dataset_info(config.REFERENCE_REPO).sha
+    revision = pinned_revision(api, done) or api.dataset_info(config.REFERENCE_REPO).sha
     return matrix, revision
+
+
+def pinned_revision(api, done: set[str]) -> str | None:
+    """Revision used by files already in this build, so a resumed build stays consistent.
+
+    reference-catalogs is refreshed monthly. If a resumed build used the new revision,
+    a star that became list-excluded in between would land in lc-pretrain from the old
+    files and in lc-heldout from the new ones.
+    """
+    if not done:
+        return None
+    from huggingface_hub import hf_hub_download
+
+    name = sorted(done)[0]
+    path = hf_hub_download(config.PRETRAIN_REPO, f"index/pass1/{name}.json", repo_type="dataset",
+                           token=os.environ.get("HF_TOKEN"))
+    return json.loads(Path(path).read_text()).get("reference_catalogs_revision")
 
 
 def main() -> None:

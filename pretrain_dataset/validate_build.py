@@ -7,6 +7,8 @@ Hard gates (exit status 1 if any fails)
        holds only the train and validation splits.
     3. Round trip: decoding flux_z reproduces the source flux within 0.1 sigma
        (slots with |flux_z| <= 100, sampled every 500th light curve).
+    4. One catalog revision: every file was built against the same
+       reference-catalogs revision, so splits and exclusions are consistent.
 
 Reported (no gate)
     FFI fill by cadence era (expect about 1 for 30-min, 10-min and 200-s FFIs once
@@ -95,6 +97,12 @@ def run(index_dir: Path, stats: list[dict], expected: set[tuple[str, str]] | Non
     ok &= gate3
     lines.append(f"- {'PASS' if gate3 else 'FAIL'} round trip: worst decoded error {worst:.4f} sigma "
                  f"(limit {ROUNDTRIP_LIMIT_SIGMA})")
+
+    # Gate 4: one reference-catalogs revision
+    revisions = sorted({s.get("reference_catalogs_revision") or "unknown" for s in stats})
+    gate4 = len(revisions) <= 1
+    ok &= gate4
+    lines.append(f"- {'PASS' if gate4 else 'FAIL'} catalog revision: {', '.join(r[:12] for r in revisions) or 'none'}")
 
     # Reports
     table = pd.DataFrame(stats)
