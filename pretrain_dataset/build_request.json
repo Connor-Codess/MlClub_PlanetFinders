@@ -1,0 +1,14 @@
+{
+  "note": "Editing and pushing this file starts the Build pretraining dataset workflow. Already-processed files are skipped, so pushing again resumes a partial build or picks up new Kepler quarters. Trial run: FFI s0001, 2-min s0001 and Kepler q17, processed in full.",
+  "sources": [
+    "ffi",
+    "2min",
+    "kepler"
+  ],
+  "files": [
+    "s0001.parquet",
+    "q17.parquet"
+  ],
+  "skip_existing": true,
+  "max_row_groups": null
+}

@@ -14,6 +14,8 @@ All light curves are on Hugging Face under [nyu-planet-finders](https://huggingf
 | [tess-spoc-2min-binned](https://huggingface.co/datasets/nyu-planet-finders/tess-spoc-2min-binned) | SPOC 2-minute light curves, sectors 1-107, 30-minute bins |
 | [kepler-llc](https://huggingface.co/datasets/nyu-planet-finders/kepler-llc) | Kepler long-cadence light curves, one file per quarter |
 | [reference-catalogs](https://huggingface.co/datasets/nyu-planet-finders/reference-catalogs) | TOI ephemerides, TESS and Kepler EB catalogs, Hawthorn et al. 2024 duotransits, KIC-TIC crossmatch |
+| [lc-pretrain](https://huggingface.co/datasets/nyu-planet-finders/lc-pretrain) | Pretraining segments (train and validation stars) and the window index |
+| lc-heldout (private) | The same format for held-out stars: search holdout, scoreboard hosts, list-excluded |
 
 ## Repository
 
@@ -23,6 +25,8 @@ All light curves are on Hugging Face under [nyu-planet-finders](https://huggingf
 | [`docs/pretraining_dataset_build_guide.md`](docs/pretraining_dataset_build_guide.md) | Step-by-step design of the pretraining dataset, with options and recommendations |
 | [`reference_catalogs/`](reference_catalogs/README.md) | Step 0 of the build: downloads and publishes the reference catalogs |
 | [`.github/workflows/build-reference-catalogs.yml`](.github/workflows/build-reference-catalogs.yml) | Runs Step 0 in GitHub Actions |
+| [`pretrain_dataset/`](pretrain_dataset/README.md) | Steps 1-11: builds lc-pretrain and lc-heldout, plus a reference window loader |
+| [`.github/workflows/build-pretrain-dataset.yml`](.github/workflows/build-pretrain-dataset.yml) | Runs Steps 1-11 in GitHub Actions, one job per source file |
 | [`tests/`](tests) | Offline tests: `python -m pytest tests -q` |
 | `tessLightCurveData/`, `kplr001430207-2012179063303_llc.csv` | Early sample light curves |
 
@@ -33,3 +37,10 @@ All light curves are on Hugging Face under [nyu-planet-finders](https://huggingf
 3. Check the run's annotations for row counts, then the dataset card on Hugging Face.
 
 To run it on your own machine or in TIKE instead, see [`reference_catalogs/README.md`](reference_catalogs/README.md).
+
+## Running Steps 1-11
+
+Edit [`pretrain_dataset/build_request.json`](pretrain_dataset/build_request.json) and push, or run
+"Build pretraining dataset" from the Actions tab. Already-processed source files are skipped. The
+checks are written to `index/validation_report.md` in lc-pretrain. See
+[`pretrain_dataset/README.md`](pretrain_dataset/README.md).

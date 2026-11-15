@@ -18,6 +18,8 @@ light curves, then fine-tuned to output a transit probability per 4-hour patch.
 |---|---|
 | `reference_catalogs/` | Step 0: builds TOI ephemerides, EB catalogs, Hawthorn duotransits and the KIC-TIC crossmatch; publishes `nyu-planet-finders/reference-catalogs` |
 | `.github/workflows/build-reference-catalogs.yml` | Runs Step 0 on GitHub's runners (needs the `HF_TOKEN` secret) |
+| `pretrain_dataset/` | Steps 1-11: builds `lc-pretrain` (public) and `lc-heldout` (private); `config.py` holds every constant |
+| `.github/workflows/build-pretrain-dataset.yml` | Runs Steps 1-11; triggered by pushing `pretrain_dataset/build_request.json` |
 | `tests/` | Offline tests (`python -m pytest tests -q`) |
 | `docs/` | Handoff notes and the build guide |
 | `tessLightCurveData/`, `kplr*.csv` | Early sample CSVs; the full data lives on Hugging Face |

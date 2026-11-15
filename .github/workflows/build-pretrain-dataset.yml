@@ -1,0 +1,127 @@
+# Builds lc-pretrain (public) and lc-heldout (private) on GitHub-hosted runners.
+#
+#   plan    lists the source files still to process and pins the reference-catalogs revision
+#   pass1   one job per source file (up to 256, 20 at a time): Steps 1-7, uploads its rows
+#   index   window index, star table, weights (Steps 8-9), Step 11 checks, dataset cards
+#
+# Start or resume it by editing pretrain_dataset/build_request.json and pushing, or from the
+# Actions tab. Files that already have a pass-1 stats file are skipped, so a re-run only does
+# what is missing. Requires the HF_TOKEN repository secret (write access to nyu-planet-finders).
+
+name: Build pretraining dataset
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, reference-catalogs]
+    paths:
+      - "pretrain_dataset/build_request.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pretrain-dataset-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      count: ${{ steps.plan.outputs.count }}
+      catalog_revision: ${{ steps.plan.outputs.catalog_revision }}
+      max_row_groups: ${{ steps.plan.outputs.max_row_groups }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            pretrain_dataset
+            tests
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: pretrain_dataset/requirements.txt
+      - run: pip install -r pretrain_dataset/requirements.txt pytest
+      - name: Offline tests
+        run: python -m pytest tests/test_pretrain_dataset.py -q
+      - id: plan
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python -m pretrain_dataset.plan_build --request pretrain_dataset/build_request.json --out build/index
+
+  pass1:
+    needs: plan
+    if: needs.plan.outputs.count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    name: pass1 ${{ matrix.source }} ${{ matrix.file }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: pretrain_dataset
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: pretrain_dataset/requirements.txt
+      - run: pip install -r pretrain_dataset/requirements.txt
+      - name: Build and upload segments
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          EXTRA=""
+          if [ -n "${{ needs.plan.outputs.max_row_groups }}" ]; then
+            EXTRA="--max-row-groups ${{ needs.plan.outputs.max_row_groups }}"
+          fi
+          python -m pretrain_dataset.build_segments \
+            --source "${{ matrix.source }}" --file "${{ matrix.file }}" \
+            --out build/pass1 --catalog-revision "${{ needs.plan.outputs.catalog_revision }}" \
+            $EXTRA --upload
+
+  index:
+    needs: [plan, pass1]
+    if: always() && needs.plan.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: pretrain_dataset
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: pretrain_dataset/requirements.txt
+      - run: pip install -r pretrain_dataset/requirements.txt
+      - name: Exclusion list (Step 2 record)
+        run: python -m pretrain_dataset.star_identity --out build/index --revision "${{ needs.plan.outputs.catalog_revision }}"
+      - name: Window index and weights (Steps 8-9)
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python -m pretrain_dataset.build_index --out build/index --upload
+      - name: Build checks (Step 11)
+        id: validate
+        continue-on-error: true
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python -m pretrain_dataset.validate_build --index build/index --stats-from-hub --expected-files all
+      - name: Dataset cards and validation report
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python -m pretrain_dataset.publish_cards --index build/index
+      - name: Fail if a hard gate failed
+        if: steps.validate.outcome != 'success'
+        run: |
+          echo "::error title=Step 11::A hard gate failed; see index/validation_report.md in lc-pretrain"
+          exit 1

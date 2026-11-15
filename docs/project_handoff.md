@@ -52,7 +52,7 @@ Full plan with every decision and recommendation: [pretraining_dataset_build_gui
 |---|---|---|
 | tess-spoc-ffi-binned | TESS-SPOC FFI light curves binned to 30 min; tic_id, sector, tmag, teff, radius, time, flux, flux_err, centr_x, centr_y, bkg, n_points | Complete: s0001-s0081, 12.8M rows, 252.8 GB |
 | tess-spoc-2min-binned | SPOC 2-min light curves binned to 30 min, sectors 1-107 | Complete: 1,734,057 rows, 27.7 GB |
-| kepler-llc | Kepler long cadence (29.4 min), one file per quarter + manifest.parquet | q00-q14 on the Hub; q15-q17 being finished in TIKE |
+| kepler-llc | Kepler long cadence (29.4 min), one file per quarter + manifest.parquet | Complete: q00-q17 (q15 13.5 GB, q16 11.2 GB, q17 4.2 GB) |
 | kepler-raw-lightcurves | Unbinned DR25 light curves for the 9,865 DR24 TCE stars plus the DR24 TCE table | Complete; for supervised Kepler work |
 | kepler-centroids | Centroids and pointing corrections, row-aligned with kepler-raw-lightcurves | Complete |
 | TESS_TCES | TOI list with 4 columns only | Superseded by reference-catalogs/toi_ephemerides |
@@ -66,10 +66,13 @@ lightkurve's default quality bitmask (17087) and only requires finite time and f
 
 ## Open items
 
-1. Finish Kepler q15-q17 in TIKE (kepler-llc should reach about 2.9M rows).
+1. Done 2026-11-15: Kepler q15-q17 on the Hub.
 2. Done 2026-11-15: Step 0 reference catalogs on Hugging Face (nyu-planet-finders/reference-catalogs).
-3. Freeze the exclusion list (build guide Steps 1-2), run a pass-1 trial on one FFI sector, one 2-min
-   sector and one Kepler quarter, check the Step 11 hard gates, then run the full build.
+3. In progress: Steps 1-11 are implemented in `pretrain_dataset/` and run by
+   `.github/workflows/build-pretrain-dataset.yml` (206 source files: 81 FFI, 107 2-min, 18 Kepler).
+   Trial on FFI s0001, 2-min s0001 and Kepler q17 first, then the full build. Check
+   `index/validation_report.md` in lc-pretrain for the Step 11 gates. One change from the guide: no
+   separate re-shuffle pass (Step 10); sampling order comes from the weighted window index.
 4. Dataset cards for the 2-min and FFI repos.
 5. Faculty sponsor and Torch access.
 6. Injection pipeline, detector, injection-recovery validation; benchmark against Salinas et al. 2025.
