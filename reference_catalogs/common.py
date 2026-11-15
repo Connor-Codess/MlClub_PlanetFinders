@@ -171,6 +171,68 @@ def write_parquet(df: pd.DataFrame, path: Path, metadata: Mapping[str, Any]) -> 
     return len(df)
 
 
+TAPVIZIER_URL = "https://tapvizier.cds.unistra.fr/TAPVizieR/tap/sync"
+
+
+def fetch_vizier_table(table: str, cds_dirs: list[str], data_file: str, min_rows: int) -> tuple[pd.DataFrame, str]:
+    """Download a whole VizieR table, trying TAPVizieR first and the CDS archive files second.
+
+    table      VizieR table name, e.g. "J/ApJS/258/16/tess-ebs"
+    cds_dirs   archive directories holding ReadMe and the data file
+    data_file  data file name inside those directories, e.g. "tess-ebs.dat"
+    min_rows   a result with fewer rows is treated as truncated and the next source is tried
+
+    Returns the table and a short description of where it came from.
+    """
+    import gzip
+    import io
+    import tempfile
+
+    errors: list[str] = []
+    try:
+        response = http_request("GET", TAPVIZIER_URL, params={
+            "REQUEST": "doQuery", "LANG": "ADQL", "FORMAT": "csv", "MAXREC": "2000000",
+            "QUERY": f'SELECT * FROM "{table}"',
+        })
+        df = pd.read_csv(io.StringIO(response.text), low_memory=False)
+        if len(df) >= min_rows:
+            LOG.info("TAPVizieR returned %d rows for %s", len(df), table)
+            return df, f"TAPVizieR {table}"
+        errors.append(f"TAPVizieR returned only {len(df)} rows")
+    except Exception as exc:
+        errors.append(f"TAPVizieR: {exc}")
+    LOG.warning("TAPVizieR did not deliver %s (%s); trying the CDS archive", table, errors[-1])
+
+    from astropy.io import ascii as astropy_ascii
+
+    for base in cds_dirs:
+        try:
+            readme = http_request("GET", f"{base}/ReadMe", retries=2).content
+            content = None
+            for name in (f"{data_file}.gz", data_file):
+                try:
+                    raw = http_request("GET", f"{base}/{name}", retries=2).content
+                    content = gzip.decompress(raw) if name.endswith(".gz") else raw
+                    break
+                except Exception as exc:
+                    errors.append(f"{base}/{name}: {exc}")
+            if content is None:
+                continue
+            with tempfile.TemporaryDirectory() as tmp:
+                readme_path, data_path = Path(tmp) / "ReadMe", Path(tmp) / data_file
+                readme_path.write_bytes(readme)
+                data_path.write_bytes(content)
+                parsed = astropy_ascii.read(str(data_path), format="cds", readme=str(readme_path))
+            df = parsed.to_pandas()
+            if len(df) >= min_rows:
+                LOG.info("CDS archive %s returned %d rows", base, len(df))
+                return df, f"CDS archive {base}/{data_file}"
+            errors.append(f"{base}: only {len(df)} rows")
+        except Exception as exc:
+            errors.append(f"{base}: {exc}")
+    raise RuntimeError(f"Could not download {table}: " + " | ".join(errors))
+
+
 def github_annotation(level: str, title: str, message: str) -> None:
     """Print a GitHub Actions annotation; plain log line when run elsewhere."""
     print(f"::{level} title={title}::{message}", flush=True)

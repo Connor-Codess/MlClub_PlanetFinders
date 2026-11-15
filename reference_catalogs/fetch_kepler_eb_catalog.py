@@ -2,7 +2,8 @@
 
 What it does
     Retrieves the main catalog table of VizieR J/AJ/151/68 (the final Kepler
-    EB catalog, about 2,900 systems from Q0-Q17) and adds standardized columns:
+    EB catalog, about 2,900 systems from Q0-Q17) through TAPVizieR, falling
+    back to the CDS archive files, and adds standardized columns:
 
         kic_id, period_d, t0_btjd, t0_reference, morphology, kepmag,
         primary_width_phase, primary_depth, secondary_width_phase,
@@ -40,6 +41,7 @@ from .common import (
     LOG,
     CatalogResult,
     configure_logging,
+    fetch_vizier_table,
     find_column,
     infer_kepler_time_reference,
     snake_case,
@@ -55,27 +57,17 @@ SOURCE = f"VizieR {VIZIER_CATALOG} (Kirk et al. 2016, AJ 151, 68)"
 MIN_EXPECTED_ROWS = 2500
 
 
+VIZIER_TABLE = f"{VIZIER_CATALOG}/catalog"
+CDS_DIRS = [
+    "https://cdsarc.cds.unistra.fr/ftp/J/AJ/151/68",
+    "https://cdsarc.cds.unistra.fr/VizieR/ftp/J/AJ/151/68",
+    "https://cdsarc.cds.unistra.fr/ftp/cats/J/other/AJ/151/68",
+    "https://cdsarc.cds.unistra.fr/ftp/cats/J/AJ/151/68",
+]
+
+
 def download() -> tuple[pd.DataFrame, str]:
-    """Return the catalog table and its VizieR name.
-
-    The main table is the one named ".../catalog"; if VizieR names it
-    differently, the largest table with a KIC column is used.
-    """
-    from astroquery.vizier import Vizier
-
-    vizier = Vizier(columns=["**"], row_limit=-1)
-    tables = vizier.get_catalogs(VIZIER_CATALOG)
-    names = list(tables.keys())
-    LOG.info("VizieR returned tables %s", names)
-    preferred = [n for n in names if n.lower().endswith("/catalog")]
-    if preferred:
-        name = preferred[0]
-    else:
-        with_kic = [n for n in names if find_column(list(tables[n].colnames), "KIC", required=False)]
-        if not with_kic:
-            raise RuntimeError(f"No table with a KIC column in {names}")
-        name = max(with_kic, key=lambda n: len(tables[n]))
-    return tables[name].to_pandas(), name
+    return fetch_vizier_table(VIZIER_TABLE, CDS_DIRS, "catalog.dat", min_rows=MIN_EXPECTED_ROWS)
 
 
 def _numeric(df: pd.DataFrame, *candidates: str) -> pd.Series:
@@ -90,17 +82,23 @@ def standardize(raw: pd.DataFrame) -> tuple[pd.DataFrame, str]:
     cols = list(df.columns)
     kic = pd.to_numeric(df[find_column(cols, "KIC", "KIC_ID", "KICID")], errors="coerce").astype("Int64")
     period = _numeric(df, "Per", "Period", "P")
-    epoch = _numeric(df, "BJD0", "bjd0", "T0")
-    reference = infer_kepler_time_reference(epoch.dropna())
+    epoch = _numeric(df, "BJD0", "bjd0", "T0", "Epoch")
+    if epoch.notna().any():
+        reference = infer_kepler_time_reference(epoch.dropna())
+        t0 = to_btjd(epoch, reference)
+    else:
+        LOG.warning("No epoch column found among %s; t0_btjd left empty", cols)
+        reference = "unknown"
+        t0 = pd.Series(np.nan, index=df.index, dtype="float64")
     LOG.info("Kepler EB epochs interpreted as %s", reference)
 
     out = pd.DataFrame({
         "kic_id": kic,
         "period_d": period.where(period > 0),
-        "t0_btjd": to_btjd(epoch, reference),
+        "t0_btjd": t0,
         "t0_reference": reference,
         "morphology": _numeric(df, "morph", "Morph"),
-        "kepmag": _numeric(df, "Kpmag", "kmag", "Kmag"),
+        "kepmag": _numeric(df, "Kpmag", "kpmag", "kmag", "Kmag", "Kp"),
         "primary_width_phase": _numeric(df, "pwidth", "Wp"),
         "primary_depth": _numeric(df, "pdepth", "Dp"),
         "secondary_width_phase": _numeric(df, "swidth", "Ws"),
@@ -120,11 +118,13 @@ def standardize(raw: pd.DataFrame) -> tuple[pd.DataFrame, str]:
 def build(out_dir: Path) -> CatalogResult:
     retrieved = utc_now()
     raw, table_name = download()
+    LOG.info("Kepler EB columns: %s", list(raw.columns))
     df, reference = standardize(raw)
     if len(df) < MIN_EXPECTED_ROWS:
         raise RuntimeError(f"Only {len(df)} rows in {table_name}; expected at least {MIN_EXPECTED_ROWS}")
     notes = {
-        "vizier_table": table_name,
+        "downloaded_from": table_name,
+        "source_columns": list(raw.columns),
         "unique_kic": int(df["kic_id"].nunique()),
         "with_period": int(df["period_d"].notna().sum()),
         "epoch_reference_detected": reference,

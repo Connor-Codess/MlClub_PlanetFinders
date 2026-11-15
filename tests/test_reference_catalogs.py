@@ -153,6 +153,13 @@ def test_kepler_eb_standardize_converts_epochs():
     assert df.loc[0, "t0_btjd"] == pytest.approx(54966.77 + 2400000 - 2457000)
 
 
+def test_kepler_eb_standardize_without_epoch_column():
+    raw = pd.DataFrame({"KIC": [1026032], "Per": [8.46]})
+    df, reference = fetch_kepler_eb_catalog.standardize(raw)
+    assert reference == "unknown"
+    assert np.isnan(df.loc[0, "t0_btjd"])
+
+
 def test_crossmatch_pick_best_prefers_clean_then_bright():
     rows = pd.DataFrame({
         "kic_id": pd.array([10, 10, 10, 20], dtype="Int64"),

@@ -8,7 +8,9 @@ What it does
         primary_width_phase, primary_depth, secondary_width_phase,
         secondary_depth, secondary_phase, primary_duration_h, sectors
 
-    BJD0 in this catalog is already BJD - 2457000, i.e. BTJD. Eclipse widths
+    The table is read through TAPVizieR, with the CDS archive files (ReadMe
+    plus tess-ebs.dat) as a fallback. BJD0 in this catalog is already
+    BJD - 2457000, i.e. BTJD. Eclipse widths
     are in phase units; primary_duration_h = width x period x 24. The
     polychain-fit values are used, falling back to the 2-Gaussian fit when the
     polychain value is missing.
@@ -41,6 +43,7 @@ from .common import (
     LOG,
     CatalogResult,
     configure_logging,
+    fetch_vizier_table,
     find_column,
     snake_case,
     to_btjd,
@@ -56,15 +59,15 @@ SOURCE = f"VizieR {VIZIER_TABLE} (Prsa et al. 2022, ApJS 258, 16)"
 EXPECTED_ROWS = 4584
 
 
-def download() -> pd.DataFrame:
-    from astroquery.vizier import Vizier
+CDS_DIRS = [
+    "https://cdsarc.cds.unistra.fr/ftp/J/ApJS/258/16",
+    "https://cdsarc.cds.unistra.fr/VizieR/ftp/J/ApJS/258/16",
+    "https://cdsarc.cds.unistra.fr/ftp/cats/J/ApJS/258/16",
+]
 
-    vizier = Vizier(columns=["**"], row_limit=-1)
-    tables = vizier.get_catalogs(VIZIER_CATALOG)
-    names = list(tables.keys())
-    key = VIZIER_TABLE if VIZIER_TABLE in names else names[0]
-    LOG.info("VizieR returned tables %s; using %s", names, key)
-    return tables[key].to_pandas()
+
+def download() -> tuple[pd.DataFrame, str]:
+    return fetch_vizier_table(VIZIER_TABLE, CDS_DIRS, "tess-ebs.dat", min_rows=EXPECTED_ROWS - 100)
 
 
 def _first_numeric(df: pd.DataFrame, *candidates: str) -> pd.Series:
@@ -121,13 +124,15 @@ def standardize(raw: pd.DataFrame) -> pd.DataFrame:
 
 def build(out_dir: Path) -> CatalogResult:
     retrieved = utc_now()
-    df = standardize(download())
+    raw, origin = download()
+    df = standardize(raw)
     if len(df) != EXPECTED_ROWS:
         LOG.warning("Expected %d rows, got %d", EXPECTED_ROWS, len(df))
     notes = {
         "unique_tic": int(df["tic_id"].nunique()),
         "with_period": int(df["period_d"].notna().sum()),
         "expected_rows": EXPECTED_ROWS,
+        "downloaded_from": origin,
     }
     rows = write_parquet(df, out_dir / FILENAME, {
         "name": NAME, "source": SOURCE, "retrieved_utc": retrieved,

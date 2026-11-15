@@ -47,8 +47,8 @@ folder, monthly, and on demand (Actions tab > "Build reference catalogs" > Run w
 
 ### Locally or in TIKE
 
-Needs internet access to exoplanetarchive.ipac.caltech.edu, vizier.cds.unistra.fr, arxiv.org,
-mast.stsci.edu and huggingface.co.
+Needs internet access to exoplanetarchive.ipac.caltech.edu, tapvizier.cds.unistra.fr (or
+cdsarc.cds.unistra.fr as a fallback), arxiv.org, mast.stsci.edu and huggingface.co.
 
 ```bash
 python -m pip install -r reference_catalogs/requirements.txt
