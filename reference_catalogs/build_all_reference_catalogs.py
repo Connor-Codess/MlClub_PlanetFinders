@@ -28,7 +28,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import signal
 import sys
+import time
 import traceback
 from pathlib import Path
 from typing import Callable
@@ -43,6 +45,24 @@ from . import (
 from .common import LOG, CatalogResult, configure_logging, github_annotation, utc_now
 
 MANIFEST_NAME = "build_manifest.json"
+
+# Wall-clock limit per builder, in seconds. A stalled remote service fails that
+# one catalog instead of holding up the whole run.
+TIME_LIMITS_S = {
+    fetch_toi_ephemerides.NAME: 15 * 60,
+    fetch_tess_eb_catalog.NAME: 15 * 60,
+    fetch_kepler_eb_catalog.NAME: 15 * 60,
+    fetch_hawthorn2024_duotransits.NAME: 10 * 60,
+    build_kic_tic_crossmatch.NAME: 60 * 60,
+}
+
+
+class BuilderTimeout(Exception):
+    pass
+
+
+def _raise_timeout(signum, frame):
+    raise BuilderTimeout("time limit reached")
 
 BUILDERS: dict[str, Callable[[Path], CatalogResult]] = {
     fetch_toi_ephemerides.NAME: fetch_toi_ephemerides.build,
@@ -63,15 +83,30 @@ def run(out_dir: Path, only: list[str] | None = None) -> dict:
     manifest = {"started_utc": utc_now(), "catalogs": {}, "failed": {}}
     for name in selected:
         LOG.info("=== Building %s ===", name)
+        limit = TIME_LIMITS_S.get(name, 30 * 60)
+        started = time.monotonic()
+        use_alarm = hasattr(signal, "SIGALRM")
+        if use_alarm:
+            signal.signal(signal.SIGALRM, _raise_timeout)
+            signal.alarm(limit)
         try:
             result = BUILDERS[name](out_dir)
+            elapsed = time.monotonic() - started
+            result.notes["build_seconds"] = round(elapsed, 1)
             manifest["catalogs"][name] = result.to_dict()
             github_annotation("notice", name, f"{result.rows:,} rows -> {result.filename}; {json.dumps(result.notes)}")
-        except Exception as exc:
-            LOG.error("%s failed: %s", name, exc)
+        except BaseException as exc:
+            if isinstance(exc, KeyboardInterrupt):
+                raise
+            elapsed = time.monotonic() - started
+            message = f"{type(exc).__name__}: {exc} (after {elapsed:.0f} s, limit {limit} s)"
+            LOG.error("%s failed: %s", name, message)
             traceback.print_exc()
-            manifest["failed"][name] = f"{type(exc).__name__}: {exc}"
-            github_annotation("error", name, f"{type(exc).__name__}: {exc}")
+            manifest["failed"][name] = message
+            github_annotation("error", name, message)
+        finally:
+            if use_alarm:
+                signal.alarm(0)
     manifest["finished_utc"] = utc_now()
 
     path = out_dir / MANIFEST_NAME
