@@ -5,7 +5,7 @@ What it does
     EB catalog, about 2,900 systems from Q0-Q17) from the CDS archive files
     (ReadMe plus catalog.dat), falling back to TAPVizieR, and adds standardized columns:
 
-        kic_id, period_d, t0_btjd, t0_reference, morphology, kepmag,
+        kic_id, period_d, t0_btjd, t0_reference, t0_suspect, morphology, kepmag,
         primary_width_phase, primary_depth, secondary_width_phase,
         secondary_depth, primary_duration_h
 
@@ -55,6 +55,9 @@ FILENAME = f"{NAME}.parquet"
 VIZIER_CATALOG = "J/AJ/151/68"
 SOURCE = f"VizieR {VIZIER_CATALOG} (Kirk et al. 2016, AJ 151, 68)"
 MIN_EXPECTED_ROWS = 2500
+# Kepler ran from BTJD -2048 to -577; epochs propagated a few periods outside that
+# window are normal, so the plausible range is generous.
+T0_PLAUSIBLE_BTJD = (-5000.0, 2000.0)
 
 
 VIZIER_TABLE = f"{VIZIER_CATALOG}/catalog"
@@ -106,6 +109,13 @@ def standardize(raw: pd.DataFrame) -> tuple[pd.DataFrame, str]:
     })
     out["primary_duration_h"] = out["primary_width_phase"] * out["period_d"] * 24.0
 
+    # A few catalog epochs fall nowhere near the mission (for example BJD0 = 5500.4
+    # in a BJD - 2400000 column). Keep the raw value under vizier_bjd0, blank the
+    # converted epoch and flag the row, rather than guess the intended value.
+    suspect = (out["t0_btjd"] < T0_PLAUSIBLE_BTJD[0]) | (out["t0_btjd"] > T0_PLAUSIBLE_BTJD[1])
+    out["t0_suspect"] = suspect.fillna(False)
+    out.loc[out["t0_suspect"], "t0_btjd"] = np.nan
+
     vizier = df.copy()
     vizier.columns = ["vizier_" + snake_case(c) for c in vizier.columns]
     for column in vizier.columns:
@@ -128,6 +138,7 @@ def build(out_dir: Path) -> CatalogResult:
         "unique_kic": int(df["kic_id"].nunique()),
         "with_period": int(df["period_d"].notna().sum()),
         "epoch_reference_detected": reference,
+        "t0_suspect": int(df["t0_suspect"].sum()),
     }
     rows = write_parquet(df, out_dir / FILENAME, {
         "name": NAME, "source": SOURCE, "retrieved_utc": retrieved,

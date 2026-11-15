@@ -172,6 +172,31 @@ def write_parquet(df: pd.DataFrame, path: Path, metadata: Mapping[str, Any]) -> 
 
 
 TAPVIZIER_URL = "https://tapvizier.cds.unistra.fr/TAPVizieR/tap/sync"
+VIZIER_ASU_MIRRORS = (
+    "https://vizier.cfa.harvard.edu",
+    "https://vizier.cds.unistra.fr",
+    "https://vizier.iucaa.in",
+)
+
+
+def parse_vizier_asu_tsv(text: str) -> pd.DataFrame:
+    """Parse VizieR's asu-tsv output: '#' comment lines, a header, a units line, a dashes line, then rows."""
+    import io
+
+    lines = [line for line in text.splitlines() if line and not line.startswith("#")]
+    if len(lines) < 3 or not set(lines[2].replace("\t", "")) <= {"-"}:
+        raise ValueError("Response is not VizieR asu-tsv output")
+    body = "\n".join([lines[0]] + lines[3:])
+    df = pd.read_csv(io.StringIO(body), sep="\t", dtype=str, keep_default_na=False)
+    df.columns = [c.strip() for c in df.columns]
+    for column in df.columns:
+        stripped = df[column].str.strip()
+        numeric = pd.to_numeric(stripped.replace("", np.nan), errors="coerce")
+        if numeric.notna().sum() == (stripped != "").sum():
+            df[column] = numeric
+        else:
+            df[column] = stripped.replace("", pd.NA).astype("string")
+    return df
 
 
 def fetch_vizier_table(table: str, cds_dirs: list[str], data_file: str, min_rows: int) -> tuple[pd.DataFrame, str]:
@@ -182,9 +207,10 @@ def fetch_vizier_table(table: str, cds_dirs: list[str], data_file: str, min_rows
     data_file  data file name inside those directories, e.g. "tess-ebs.dat"
     min_rows   a result with fewer rows is treated as truncated and the next source is tried
 
-    The static archive files are tried first because they are small and fast;
-    every request uses a short timeout so an unresponsive service fails over
-    within minutes. Returns the table and a short description of its origin.
+    Sources are tried in order: the VizieR asu-tsv export on several mirrors
+    (fast, one request), the CDS archive files (ReadMe plus data file), then
+    TAPVizieR. Every request uses a short timeout so an unresponsive service
+    fails over within minutes. Returns the table and a description of its origin.
     """
     import gzip
     import io
@@ -193,6 +219,20 @@ def fetch_vizier_table(table: str, cds_dirs: list[str], data_file: str, min_rows
     from astropy.io import ascii as astropy_ascii
 
     errors: list[str] = []
+    for mirror in VIZIER_ASU_MIRRORS:
+        try:
+            response = http_request("GET", f"{mirror}/viz-bin/asu-tsv", timeout=120, retries=2, params={
+                "-source": table, "-out.max": "unlimited", "-out.all": "1",
+            })
+            df = parse_vizier_asu_tsv(response.text)
+            if len(df) >= min_rows:
+                LOG.info("VizieR mirror %s returned %d rows for %s", mirror, len(df), table)
+                return df, f"VizieR asu-tsv {mirror} {table}"
+            errors.append(f"{mirror}: only {len(df)} rows")
+        except Exception as exc:
+            errors.append(f"{mirror}: {exc}")
+        LOG.warning("VizieR mirror %s did not deliver %s: %s", mirror, table, errors[-1])
+
     for base in cds_dirs:
         try:
             readme = http_request("GET", f"{base}/ReadMe", timeout=60, retries=2).content

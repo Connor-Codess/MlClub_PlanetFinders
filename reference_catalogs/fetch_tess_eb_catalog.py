@@ -11,7 +11,8 @@ What it does
     The table is read from the CDS archive files (ReadMe plus tess-ebs.dat),
     with TAPVizieR as a fallback. BJD0 in this catalog is already
     BJD - 2457000, i.e. BTJD. Eclipse widths
-    are in phase units; primary_duration_h = width x period x 24. The
+    are in phase units; primary_duration_h = width x period x 24. Negative
+    morphology values (the catalog's placeholder for "not measured") become null. The
     polychain-fit values are used, falling back to the 2-Gaussian fit when the
     polychain value is missing.
 
@@ -99,10 +100,10 @@ def standardize(raw: pd.DataFrame) -> pd.DataFrame:
         "signal_id": signal,
         "period_d": period.where(period > 0),
         "t0_btjd": to_btjd(_first_numeric(df, "BJD0"), "BTJD"),
-        "morphology": _first_numeric(df, "Morph"),
+        "morphology": _first_numeric(df, "Morph").where(lambda m: m >= 0),
         "tmag": _first_numeric(df, "Tmag"),
-        "ra_deg": _first_numeric(df, "RAdeg", "_RA"),
-        "dec_deg": _first_numeric(df, "DEdeg", "_DE"),
+        "ra_deg": _first_numeric(df, "RAdeg", "RAJ2000", "_RA"),
+        "dec_deg": _first_numeric(df, "DEdeg", "DEJ2000", "_DE"),
         "primary_width_phase": primary_width,
         "primary_depth": primary_depth,
         "secondary_width_phase": secondary_width,

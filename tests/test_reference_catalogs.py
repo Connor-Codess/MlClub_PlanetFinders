@@ -19,7 +19,13 @@ from reference_catalogs import (
     fetch_tess_eb_catalog,
     fetch_toi_ephemerides,
 )
-from reference_catalogs.common import infer_kepler_time_reference, snake_case, to_btjd, write_parquet
+from reference_catalogs.common import (
+    infer_kepler_time_reference,
+    parse_vizier_asu_tsv,
+    snake_case,
+    to_btjd,
+    write_parquet,
+)
 from reference_catalogs.upload_reference_catalogs_to_hub import render_card
 
 
@@ -151,6 +157,29 @@ def test_kepler_eb_standardize_converts_epochs():
     df, reference = fetch_kepler_eb_catalog.standardize(raw)
     assert reference == "BJD-2400000"
     assert df.loc[0, "t0_btjd"] == pytest.approx(54966.77 + 2400000 - 2457000)
+
+
+def test_kepler_eb_flags_implausible_epochs():
+    raw = pd.DataFrame({"KIC": [1, 2, 3], "Per": [3.8, 8.4, 2.0], "BJD0": [5500.43, 54966.77, 54980.1]})
+    df, reference = fetch_kepler_eb_catalog.standardize(raw)
+    assert reference == "BJD-2400000"
+    assert bool(df.loc[0, "t0_suspect"]) and np.isnan(df.loc[0, "t0_btjd"])
+    assert not bool(df.loc[1, "t0_suspect"])
+
+
+def test_parse_vizier_asu_tsv():
+    text = (
+        "#comment\n"
+        "TIC\tPer\tSectors\n"
+        " \td\t \n"
+        "------\t-----\t-----\n"
+        "  91961\t 8.0\t9,36\n"
+        " 123456\t     \t1\n"
+    )
+    df = parse_vizier_asu_tsv(text)
+    assert df["TIC"].tolist() == [91961, 123456]
+    assert np.isnan(df["Per"].iloc[1])
+    assert df["Sectors"].tolist() == ["9,36", "1"]
 
 
 def test_kepler_eb_standardize_without_epoch_column():

@@ -29,6 +29,8 @@ Every module has a docstring at the top that explains its inputs, outputs and co
   source uses; the detected convention is stored in the file.
 - Every output keeps the standardized columns first (`tic_id`, `kic_id`, `period_d`, `t0_btjd`,
   `duration_h`, ...) and then the source's own columns with an `archive_` or `vizier_` prefix.
+- VizieR tables are read from the asu-tsv export of the Harvard mirror first, because the CDS archive
+  and TAP servers have been unresponsive at times; the CDS archive files and TAPVizieR are fallbacks.
 - Every Parquet file stores its source, retrieval time and build notes as JSON in the file footer
   under the key `reference_catalog`:
   `json.loads(pyarrow.parquet.read_schema(path).metadata[b"reference_catalog"])`.
@@ -47,8 +49,9 @@ folder, monthly, and on demand (Actions tab > "Build reference catalogs" > Run w
 
 ### Locally or in TIKE
 
-Needs internet access to exoplanetarchive.ipac.caltech.edu, tapvizier.cds.unistra.fr (or
-cdsarc.cds.unistra.fr as a fallback), arxiv.org, mast.stsci.edu and huggingface.co.
+Needs internet access to exoplanetarchive.ipac.caltech.edu, a VizieR mirror (vizier.cfa.harvard.edu is
+tried first, then the CDS servers), arxiv.org, mast.stsci.edu and huggingface.co. A full build takes
+about 2 minutes, most of it the MAST crossmatch.
 
 ```bash
 python -m pip install -r reference_catalogs/requirements.txt
