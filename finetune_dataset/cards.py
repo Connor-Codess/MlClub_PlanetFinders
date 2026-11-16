@@ -300,7 +300,11 @@ number: this is a close comparison, not an identical one.
 
 ## Usage
 
-{USAGE.format(repo=config.BENCHMARK_REPO, example="benchmark_targets.parquet")}
+{USAGE.format(repo=config.BENCHMARK_REPO, example="data/astronet_dr24/part-00000-of-" + _n_parts(measured, "benchmark", "astronet_dr24") + ".parquet")}
+
+The signal table: `pd.read_parquet(hf_hub_download("{config.BENCHMARK_REPO}", "benchmark_targets.parquet", repo_type="dataset"))`,
+one row per signal with its ephemeris, the paper's label, `positive_paper` and `positive_planet`; join on
+`benchmark_tce_id` = `tce_id`.
 
 Code: [finetune_dataset/benchmarks.py](https://github.com/Connor-Codess/MlClub_PlanetFinders/blob/main/finetune_dataset/benchmarks.py).
 Please cite the original papers when using these test sets.
