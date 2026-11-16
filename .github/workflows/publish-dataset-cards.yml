@@ -1,0 +1,39 @@
+# Publishes the dataset cards of the source datasets (dataset_cards/*.md) and refreshes the
+# lc-pretrain and lc-heldout cards from their published build summary.
+# Requires the HF_TOKEN repository secret.
+
+name: Publish dataset cards
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, reference-catalogs]
+    paths:
+      - "dataset_cards/**"
+      - "pretrain_dataset/publish_cards.py"
+
+permissions:
+  contents: read
+
+jobs:
+  cards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: |
+            dataset_cards
+            pretrain_dataset
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - run: pip install -r pretrain_dataset/requirements.txt
+      - name: Source dataset cards
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python dataset_cards/publish_dataset_cards.py
+      - name: lc-pretrain and lc-heldout cards
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python -m pretrain_dataset.publish_cards --index build/index --from-hub
