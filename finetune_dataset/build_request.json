@@ -1,6 +1,7 @@
 {
-  "note": "Editing and pushing this file starts the Build fine-tuning datasets workflow. Full build: every source file at the full quotas (the 2026-11-16 trial on five files at 2% passed all four checks).",
+  "note": "Editing and pushing this file starts the Build fine-tuning datasets workflow. reuse_run_id reruns only the assemble job on that run's materialized rows: run 43810358608 built all 540,374 rows and passed all four checks, but its upload was refused for invalid card YAML.",
   "sources": ["ffi", "2min", "kepler"],
   "files": null,
-  "scale": 1.0
+  "scale": 1.0,
+  "reuse_run_id": 43810358608
 }

@@ -171,7 +171,8 @@ def upload(dataset: str, folder: Path) -> None:
                               commit_message=f"{dataset} build {config.BUILD_VERSION}")
             break
         except Exception as error:  # rate limits and dropped connections: retry with backoff
-            if attempt == 5:
+            status = getattr(getattr(error, "response", None), "status_code", None)
+            if attempt == 5 or (status is not None and 400 <= status < 500 and status != 429):
                 raise
             LOG.warning("Upload of %s failed (%s); retrying", repo, error)
             time.sleep(120 * (attempt + 1))

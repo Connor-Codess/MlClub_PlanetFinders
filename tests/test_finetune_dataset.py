@@ -179,3 +179,13 @@ def test_astronet_split_procedure():
     expected = labeled.iloc[np.random.permutation(len(labeled))].iloc[int(0.9 * len(labeled)):]
     assert list(test["kic_id"]) == list(expected["kepid"])
     assert test["epoch_btjd"].iloc[0] == pytest.approx(140.0 - 2167.0)
+
+
+def test_card_headers_are_valid_yaml():
+    yaml = pytest.importorskip("yaml")
+    from finetune_dataset.cards import yaml_header
+
+    header = yaml_header("lc-x: a title, with: colons", ["train", "validation"])
+    meta = yaml.safe_load(header.split("---")[1])
+    assert meta["pretty_name"] == "lc-x: a title, with: colons"
+    assert [d["split"] for d in meta["configs"][0]["data_files"]] == ["train", "validation"]

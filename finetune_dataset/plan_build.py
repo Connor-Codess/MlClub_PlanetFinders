@@ -1,12 +1,16 @@
 """Plan a fine-tuning build: which source files to scan, which catalog revision, what scale.
 
 Reads finetune_dataset/build_request.json:
-    {"sources": ["ffi", "2min", "kepler"], "files": null or ["s0001.parquet", ...], "scale": 1.0}
+    {"sources": ["ffi", "2min", "kepler"], "files": null or ["s0001.parquet", ...], "scale": 1.0,
+     "reuse_run_id": null or <workflow run id>}
+
+reuse_run_id reruns only the assemble job on the materialized rows of an earlier run
+(artifacts are kept 5 days), for example after fixing a card or an upload problem.
 
 Lists the source files that lc-pretrain's pass 1 finished (index/pass1/*.json) and pins
 the reference-catalogs revision that pass 1 used, so known events and pools match the
 stored rows. Writes to $GITHUB_OUTPUT: matrix (JSON list of {source, stem}), count,
-catalog_revision, scale.
+catalog_revision, scale, reuse_run_id.
 
 How to run
     python -m finetune_dataset.plan_build --request finetune_dataset/build_request.json
@@ -49,8 +53,9 @@ def main() -> None:
     if len(matrix) > 256:
         raise SystemExit(f"{len(matrix)} files exceed the 256-job matrix limit")
     scale = float(request.get("scale", 1.0))
+    reuse = request.get("reuse_run_id")
     outputs = {"matrix": json.dumps(matrix), "count": str(len(matrix)), "catalog_revision": revision,
-               "scale": str(scale)}
+               "scale": str(scale), "reuse_run_id": str(reuse) if reuse else ""}
     print(json.dumps({k: v for k, v in outputs.items() if k != "matrix"}))
     path = os.environ.get("GITHUB_OUTPUT")
     if path:

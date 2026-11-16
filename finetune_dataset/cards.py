@@ -6,6 +6,7 @@ build itself (summary.json), not from this file.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -93,7 +94,7 @@ def gates_text(summary: dict) -> str:
 def yaml_header(pretty: str, splits: list[str], extra_tags: tuple[str, ...] = ()) -> str:
     tags = ["astronomy", "exoplanets", "tess", "kepler", "light-curves", "time-series", "transit-detection",
             *extra_tags]
-    lines = ["---", "license: other", f"pretty_name: {pretty}", "tags:"] + [f"- {t}" for t in tags]
+    lines = ["---", "license: other", f"pretty_name: {json.dumps(pretty)}", "tags:"] + [f"- {t}" for t in tags]
     lines += ["configs:", "- config_name: default", "  data_files:"]
     for split in splits:
         lines += [f"  - split: {split}", f"    path: data/{split}/*.parquet"]

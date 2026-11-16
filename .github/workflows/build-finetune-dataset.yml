@@ -7,6 +7,7 @@
 #   assemble     shuffles, runs the build checks, writes the cards and uploads
 #
 # Start it by editing finetune_dataset/build_request.json and pushing, or from the Actions tab.
+# With "reuse_run_id" set in the request, only assemble runs, on the rows of that earlier run.
 # Requires the HF_TOKEN repository secret (write access to nyu-planet-finders).
 
 name: Build fine-tuning datasets
@@ -20,6 +21,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: finetune-dataset-${{ github.ref }}
@@ -41,6 +43,7 @@ jobs:
       count: ${{ steps.plan.outputs.count }}
       catalog_revision: ${{ steps.plan.outputs.catalog_revision }}
       scale: ${{ steps.plan.outputs.scale }}
+      reuse_run_id: ${{ steps.plan.outputs.reuse_run_id }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -50,7 +53,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
           cache-dependency-path: finetune_dataset/requirements.txt
-      - run: pip install -r finetune_dataset/requirements.txt pytest
+      - run: pip install -r finetune_dataset/requirements.txt pytest pyyaml
       - name: Offline tests
         run: python -m pytest tests/test_pretrain_dataset.py tests/test_finetune_dataset.py -q
       - id: plan
@@ -67,6 +70,7 @@ jobs:
 
   scan:
     needs: plan
+    if: needs.plan.outputs.reuse_run_id == ''
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
@@ -177,7 +181,8 @@ jobs:
           compression-level: 0
 
   assemble:
-    needs: [choose, materialize]
+    needs: [plan, choose, materialize]
+    if: always() && needs.plan.result == 'success' && (needs.plan.outputs.reuse_run_id != '' || needs.materialize.result == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 300
     steps:
@@ -198,15 +203,21 @@ jobs:
         with:
           name: plan
           path: build/plan
+          run-id: ${{ needs.plan.outputs.reuse_run_id || github.run_id }}
+          github-token: ${{ github.token }}
       - uses: actions/download-artifact@v4
         with:
           name: benchmarks
           path: build/benchmarks
+          run-id: ${{ needs.plan.outputs.reuse_run_id || github.run_id }}
+          github-token: ${{ github.token }}
       - uses: actions/download-artifact@v4
         with:
           pattern: rows-*
           path: build/rows
           merge-multiple: true
+          run-id: ${{ needs.plan.outputs.reuse_run_id || github.run_id }}
+          github-token: ${{ github.token }}
       - name: Shuffle, check, write cards and upload
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
