@@ -1,6 +1,6 @@
 {
-  "note": "Editing and pushing this file starts the Build fine-tuning datasets workflow. Trial: two FFI sectors, two 2-min sectors and Kepler q05 at 2% of the full quotas.",
+  "note": "Editing and pushing this file starts the Build fine-tuning datasets workflow. Full build: every source file at the full quotas (the 2026-11-16 trial on five files at 2% passed all four checks).",
   "sources": ["ffi", "2min", "kepler"],
-  "files": ["s0010.parquet", "s0040.parquet", "q05.parquet"],
-  "scale": 0.02
+  "files": null,
+  "scale": 1.0
 }

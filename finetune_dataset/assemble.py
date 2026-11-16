@@ -29,6 +29,7 @@ import json
 import logging
 import os
 import shutil
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -164,7 +165,16 @@ def upload(dataset: str, folder: Path) -> None:
     if any(f.startswith("data/") for f in api.list_repo_files(repo, repo_type="dataset")):
         # shard names depend on the row count, so old shards would otherwise linger
         api.delete_folder("data", repo_id=repo, repo_type="dataset", commit_message="Remove previous build")
-    api.upload_large_folder(repo_id=repo, repo_type="dataset", folder_path=str(folder))
+    for attempt in range(6):
+        try:
+            api.upload_folder(repo_id=repo, repo_type="dataset", folder_path=str(folder),
+                              commit_message=f"{dataset} build {config.BUILD_VERSION}")
+            break
+        except Exception as error:  # rate limits and dropped connections: retry with backoff
+            if attempt == 5:
+                raise
+            LOG.warning("Upload of %s failed (%s); retrying", repo, error)
+            time.sleep(120 * (attempt + 1))
     LOG.info("Uploaded %s to %s", folder, repo)
 
 
