@@ -1,0 +1,215 @@
+# Builds lc-finetune (public), lc-eval (private) and lc-benchmarks (private) from lc-pretrain and lc-heldout.
+#
+#   plan         offline tests, file list, pinned catalog revision, published benchmark test sets
+#   scan         one job per source file: candidate windows, hosts, transit cutouts, benchmark windows
+#   choose       picks every sample and builds the transplant templates
+#   materialize  one job per source file: cuts windows, injects transits, writes labeled rows
+#   assemble     shuffles, runs the build checks, writes the cards and uploads
+#
+# Start it by editing finetune_dataset/build_request.json and pushing, or from the Actions tab.
+# Requires the HF_TOKEN repository secret (write access to nyu-planet-finders).
+
+name: Build fine-tuning datasets
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, reference-catalogs]
+    paths:
+      - "finetune_dataset/build_request.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: finetune-dataset-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.11"
+  SPARSE: |
+    pretrain_dataset
+    finetune_dataset
+    tests
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      count: ${{ steps.plan.outputs.count }}
+      catalog_revision: ${{ steps.plan.outputs.catalog_revision }}
+      scale: ${{ steps.plan.outputs.scale }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: ${{ env.SPARSE }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: finetune_dataset/requirements.txt
+      - run: pip install -r finetune_dataset/requirements.txt pytest
+      - name: Offline tests
+        run: python -m pytest tests/test_pretrain_dataset.py tests/test_finetune_dataset.py -q
+      - id: plan
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python -m finetune_dataset.plan_build --request finetune_dataset/build_request.json
+      - name: Published benchmark test sets
+        run: python -m finetune_dataset.benchmarks --out build/benchmarks --catalog-revision "${{ steps.plan.outputs.catalog_revision }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmarks
+          path: build/benchmarks
+          retention-days: 5
+
+  scan:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    name: scan ${{ matrix.source }} ${{ matrix.stem }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: ${{ env.SPARSE }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: finetune_dataset/requirements.txt
+      - run: pip install -r finetune_dataset/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: benchmarks
+          path: build/benchmarks
+      - name: Scan
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python -m finetune_dataset.scan --source "${{ matrix.source }}" --stem "${{ matrix.stem }}" \
+            --out build/scan --catalog-revision "${{ needs.plan.outputs.catalog_revision }}" \
+            --benchmarks build/benchmarks/benchmark_targets.parquet
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scan-${{ matrix.source }}-${{ matrix.stem }}
+          path: build/scan
+          retention-days: 5
+
+  choose:
+    needs: [plan, scan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: ${{ env.SPARSE }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: finetune_dataset/requirements.txt
+      - run: pip install -r finetune_dataset/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: scan-*
+          path: build/scan
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: benchmarks
+          path: build/benchmarks
+      - name: Choose samples
+        run: |
+          python -m finetune_dataset.choose_samples --scan build/scan --out build/plan \
+            --benchmarks build/benchmarks/benchmark_targets.parquet --scale "${{ needs.plan.outputs.scale }}"
+      - id: matrix
+        run: echo "matrix=$(python -c 'import json; print(json.dumps(json.load(open("build/plan/plan.json"))["matrix"]))')" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plan
+          path: build/plan
+          retention-days: 5
+
+  materialize:
+    needs: choose
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        include: ${{ fromJSON(needs.choose.outputs.matrix) }}
+    name: materialize ${{ matrix.source }} ${{ matrix.stem }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: ${{ env.SPARSE }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: finetune_dataset/requirements.txt
+      - run: pip install -r finetune_dataset/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: plan
+          path: build/plan
+      - name: Materialize
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python -m finetune_dataset.materialize --plan build/plan --source "${{ matrix.source }}" \
+            --stem "${{ matrix.stem }}" --out build/rows
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rows-${{ matrix.source }}-${{ matrix.stem }}
+          path: build/rows
+          retention-days: 5
+          compression-level: 0
+
+  assemble:
+    needs: [choose, materialize]
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: ${{ env.SPARSE }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: finetune_dataset/requirements.txt
+      - run: pip install -r finetune_dataset/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: plan
+          path: build/plan
+      - uses: actions/download-artifact@v4
+        with:
+          name: benchmarks
+          path: build/benchmarks
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rows-*
+          path: build/rows
+          merge-multiple: true
+      - name: Shuffle, check, write cards and upload
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python -m finetune_dataset.assemble --rows build/rows --plan build/plan \
+            --benchmarks build/benchmarks --out build/final --upload

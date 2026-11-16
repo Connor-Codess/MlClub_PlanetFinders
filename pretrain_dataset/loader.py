@@ -28,6 +28,12 @@ Usage
     batch = sampler.sample(32)                             # list of 32 samples
     sampler = WindowSampler(split="train", local_dir="build/pass1/pretrain",
                             index_dir="build/index", sources=["ffi"])
+
+Keeping benchmark test stars out of pretraining (their light curves are in
+lc-pretrain without labels; lc-finetune already excludes them):
+    targets = pd.read_parquet(hf_hub_download("nyu-planet-finders/lc-benchmarks",
+                                              "benchmark_targets.parquet", repo_type="dataset"))
+    sampler = WindowSampler(split="train", exclude_star_keys=set(targets["star_key"]))
 """
 
 from __future__ import annotations
@@ -58,7 +64,7 @@ class WindowSampler:
     def __init__(self, split: str = "train", sources: list[str] | None = None,
                  local_dir: str | Path | None = None, index_dir: str | Path | None = None,
                  window_slots: int = config.WINDOW_SLOTS, weight_column: str = "w_default",
-                 seed: int = 0, cache_row_groups: int = 64):
+                 seed: int = 0, cache_row_groups: int = 64, exclude_star_keys: set[str] | None = None):
         self.local_dir = Path(local_dir) if local_dir else None
         self.window_slots = window_slots
         self.rng = np.random.default_rng(seed)
@@ -75,6 +81,8 @@ class WindowSampler:
         windows = pd.read_parquet(index_path)
         if sources:
             windows = windows[windows["source"].isin(sources)]
+        if exclude_star_keys:
+            windows = windows[~windows["star_key"].astype(str).isin(exclude_star_keys)]
         weights = windows[weight_column].to_numpy(dtype=np.float64)
         self.windows = windows.reset_index(drop=True)
         self.probabilities = weights / weights.sum()
