@@ -1,6 +1,10 @@
 {
-  "note": "Editing and pushing this file starts the Build fine-tuning datasets workflow. reuse_run_id reruns only the assemble job on that run's materialized rows: run 43810358608 built all 540,374 rows and passed all four checks, but its upload was refused for invalid card YAML.",
-  "sources": ["ffi", "2min", "kepler"],
+  "note": "Editing and pushing this file starts the Build fine-tuning datasets workflow. reuse_run_id reruns only the assemble job on that run's materialized rows: run 43810358608 built all 540,374 rows and passed all four checks, but its upload was refused for invalid card YAML. Second attempt: the first rerun hit GitHub's secondary rate limit downloading 206 artifacts in parallel; they are now fetched one at a time.",
+  "sources": [
+    "ffi",
+    "2min",
+    "kepler"
+  ],
   "files": null,
   "scale": 1.0,
   "reuse_run_id": 43810358608

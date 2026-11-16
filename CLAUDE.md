@@ -1,6 +1,7 @@
 # Project context for Claude Code
 
-Read `docs/project_handoff.md` first, then `docs/pretraining_dataset_build_guide.md`. Together they hold
+Read `docs/project_handoff.md` first, then `docs/pretraining_dataset_build_guide.md` and
+`docs/finetune_dataset_build_log.md`. Together they hold
 every decision made so far on this project: goal, data on Hugging Face, the pretraining dataset design,
 splits and exclusions, and open items.
 
@@ -20,6 +21,9 @@ light curves, then fine-tuned to output a transit probability per 4-hour patch.
 | `.github/workflows/build-reference-catalogs.yml` | Runs Step 0 on GitHub's runners (needs the `HF_TOKEN` secret) |
 | `pretrain_dataset/` | Steps 1-11: builds `lc-pretrain` (public) and `lc-heldout` (private); `config.py` holds every constant |
 | `.github/workflows/build-pretrain-dataset.yml` | Runs Steps 1-11; triggered by pushing `pretrain_dataset/build_request.json` |
+| `finetune_dataset/` | Builds `lc-finetune` (public), `lc-eval` and `lc-benchmarks` (private); `config.py` holds every number |
+| `.github/workflows/build-finetune-dataset.yml` | Runs that build; triggered by pushing `finetune_dataset/build_request.json` |
+| `dataset_cards/` | Cards of the source datasets; `publish-dataset-cards.yml` uploads them |
 | `tests/` | Offline tests (`python -m pytest tests -q`) |
 | `docs/` | Handoff notes and the build guide |
 | `tessLightCurveData/`, `kplr*.csv` | Early sample CSVs; the full data lives on Hugging Face |
@@ -33,6 +37,7 @@ light curves, then fine-tuned to output a transit probability per 4-hour patch.
   exclusions, sampling, ablations, fine-tuning and evaluation only.
 - Held-out stars must be physically absent from the pretraining repo.
 - Rank model and data variants on the injection-recovery validation set, never on pretraining loss.
+- lc-eval holds held-out stars only; every benchmark star is excluded from lc-finetune. Keep it so.
 
 ## Working notes
 

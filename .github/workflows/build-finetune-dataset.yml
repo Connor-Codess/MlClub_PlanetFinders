@@ -212,12 +212,30 @@ jobs:
           run-id: ${{ needs.plan.outputs.reuse_run_id || github.run_id }}
           github-token: ${{ github.token }}
       - uses: actions/download-artifact@v4
+        if: needs.plan.outputs.reuse_run_id == ''
         with:
           pattern: rows-*
           path: build/rows
           merge-multiple: true
-          run-id: ${{ needs.plan.outputs.reuse_run_id || github.run_id }}
-          github-token: ${{ github.token }}
+      - name: Rows of the earlier run (one at a time, to stay under GitHub's API rate limits)
+        if: needs.plan.outputs.reuse_run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ needs.plan.outputs.reuse_run_id }}
+        run: |
+          mkdir -p build/rows
+          gh api --paginate "repos/${{ github.repository }}/actions/runs/$RUN/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.name | startswith("rows-")) | "\(.id) \(.name)"' > rows.txt
+          echo "$(wc -l < rows.txt) row artifacts"
+          while read -r id name; do
+            for attempt in 1 2 3 4 5 6; do
+              gh api "repos/${{ github.repository }}/actions/artifacts/$id/zip" > artifact.zip && break
+              echo "retrying $name"; sleep $((attempt * 60))
+            done
+            unzip -q -o artifact.zip -d build/rows && rm artifact.zip
+            sleep 2
+          done < rows.txt
+          ls build/rows | wc -l
       - name: Shuffle, check, write cards and upload
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}

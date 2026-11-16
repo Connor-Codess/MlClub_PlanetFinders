@@ -16,6 +16,9 @@ All light curves are on Hugging Face under [nyu-planet-finders](https://huggingf
 | [reference-catalogs](https://huggingface.co/datasets/nyu-planet-finders/reference-catalogs) | TOI ephemerides, TESS and Kepler EB catalogs, Hawthorn et al. 2024 duotransits, KIC-TIC crossmatch |
 | [lc-pretrain](https://huggingface.co/datasets/nyu-planet-finders/lc-pretrain) | Pretraining segments (train and validation stars) and the window index |
 | lc-heldout (private) | The same format for held-out stars: search holdout, scoreboard hosts, list-excluded |
+| [lc-finetune](https://huggingface.co/datasets/nyu-planet-finders/lc-finetune) | Labeled 27-day windows for fine-tuning: real, injected and transplanted transits, negatives |
+| lc-eval (private) | Labeled validation and test windows from held-out stars only |
+| lc-benchmarks (private) | AstroNet, Astronet-Triage, Astronet-Triage-v2 test sets and Salinas et al. 2025 candidates on our light curves |
 
 ## Repository
 
@@ -27,6 +30,10 @@ All light curves are on Hugging Face under [nyu-planet-finders](https://huggingf
 | [`.github/workflows/build-reference-catalogs.yml`](.github/workflows/build-reference-catalogs.yml) | Runs Step 0 in GitHub Actions |
 | [`pretrain_dataset/`](pretrain_dataset/README.md) | Steps 1-11: builds lc-pretrain and lc-heldout, plus a reference window loader |
 | [`.github/workflows/build-pretrain-dataset.yml`](.github/workflows/build-pretrain-dataset.yml) | Runs Steps 1-11 in GitHub Actions, one job per source file |
+| [`finetune_dataset/`](finetune_dataset/README.md) | Builds lc-finetune, lc-eval and lc-benchmarks from lc-pretrain and lc-heldout |
+| [`.github/workflows/build-finetune-dataset.yml`](.github/workflows/build-finetune-dataset.yml) | Runs that build: plan, scan, choose, materialize, assemble |
+| [`dataset_cards/`](dataset_cards/) | Hand-written cards of the source datasets, published by `publish-dataset-cards.yml` |
+| [`docs/finetune_dataset_build_log.md`](docs/finetune_dataset_build_log.md) | Every decision, number and change of the fine-tuning build |
 | [`tests/`](tests) | Offline tests: `python -m pytest tests -q` |
 | `tessLightCurveData/`, `kplr001430207-2012179063303_llc.csv` | Early sample light curves |
 
@@ -44,3 +51,9 @@ Edit [`pretrain_dataset/build_request.json`](pretrain_dataset/build_request.json
 "Build pretraining dataset" from the Actions tab. Already-processed source files are skipped. The
 checks are written to `index/validation_report.md` in lc-pretrain. See
 [`pretrain_dataset/README.md`](pretrain_dataset/README.md).
+
+## Building the fine-tuning datasets
+
+Edit [`finetune_dataset/build_request.json`](finetune_dataset/build_request.json) and push. `files` and `scale`
+make a trial; `reuse_run_id` reruns only the final assembly on an earlier run's rows. See
+[`finetune_dataset/README.md`](finetune_dataset/README.md) and the build log in `docs/`.
