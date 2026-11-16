@@ -1,4 +1,4 @@
-# Exoplanet ML pipeline: status and handoff (updated 2026-11-15)
+# Exoplanet ML pipeline: status and handoff (updated 2026-11-16)
 
 Read this first when picking up the planet-finding project. The same notes are kept in the team's
 Claude project "Ml Club Space".
@@ -58,9 +58,9 @@ Full plan with every decision and recommendation: [pretraining_dataset_build_gui
 | TESS_TCES | TOI list with 4 columns only | Superseded by reference-catalogs/toi_ephemerides |
 | lc-pretrain | Pretraining segments for train and validation stars, window index with weights, validation report | Built 2026-11-15 (v1) |
 | lc-heldout (private) | Same format for search_holdout, scoreboard_hosts and list_excluded stars, plus exclusions.parquet | Built 2026-11-15 (v1) |
-| lc-finetune | 27-day labeled windows, train 400,000 / validation 24,000: real short and long transits, batman and transplanted injections, random and EB negatives; benchmark stars excluded | Built 2026-11-16 (v1) |
-| lc-eval (private) | Labeled val (49,990) and test (49,885) windows from held-out stars only | Built 2026-11-16 (v1) |
-| lc-benchmarks (private) | AstroNet DR24, Astronet-Triage, Astronet-Triage-v2 test sets and Salinas et al. 2025 candidates on our light curves (16,499 windows) | Built 2026-11-16 (v1) |
+| lc-finetune | 27-day labeled windows, train 400,000 / validation 24,000: real short and long transits, batman and transplanted injections, random and EB negatives; benchmark stars excluded | Built 2026-11-16 (v2) |
+| lc-eval (private) | Labeled val (49,990) and test (49,885) windows from held-out stars only | Built 2026-11-16 (v2) |
+| lc-benchmarks (private) | AstroNet DR24, Astronet-Triage, Astronet-Triage-v2 test sets and Salinas et al. 2025 candidates on our light curves (16,499 windows) | Built 2026-11-16 (v2) |
 | reference-catalogs | TOI ephemerides (8,175), TESS EBs (4,584), Kepler EBs (2,876), Hawthorn duotransits (85), KIC-TIC crossmatch (207,617 KIC, 99.0% matched) | Built 2026-11-15 by `reference_catalogs/` via GitHub Actions; refreshed monthly |
 
 Time systems: TESS times are BTJD = BJD - 2457000; Kepler times are BKJD = BJD - 2454833;
@@ -86,7 +86,12 @@ lightkurve's default quality bitmask (17087) and only requires finite time and f
 5. Done 2026-11-16: lc-finetune, lc-eval and lc-benchmarks v1 by `finetune_dataset/`; all four build checks
    passed (540,374 rows, no shared or benchmark stars, transit patches 1.2-2.7 sigma below negatives, measured /
    intended injection SNR 1.02). Real transits filled 10% of lc-finetune train instead of the planned 22.5%
-   (per-star cap of 12, few Kepler long-period PCs); batman took the rest. Every decision and change:
+   (per-star cap of 12, few Kepler long-period PCs); batman took the rest.
+   v2 (2026-11-16, run 43913578674) keeps faint short-period planets: planets are verified by the stacked SNR of
+   all their transits (>= 7), real windows need a stacked in-window SNR >= 4 instead of one transit at SNR 4,
+   30 windows per star, and injections target a combined SNR, so short periods reach per-transit SNR near 1.
+   Real transits are now 16% of lc-finetune train (53,268 short, 10,900 long). Batman injections land at a
+   median 0.83 of their target combined SNR; the stored inj_snr_total is the achieved value. Every decision and change:
    `docs/finetune_dataset_build_log.md` (live copy: https://claude.ai/artifact/7h6fmA3BG5vne1v8yvHAek).
    Open: benchmark stars are still in lc-pretrain (skip them with the loader's `exclude_star_keys`, or rebuild),
    TESS benchmark coverage is partial (QLP versus TESS-SPOC), masking function for pretraining not written yet.
