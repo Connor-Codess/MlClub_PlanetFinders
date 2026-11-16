@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pretrain_dataset import config as pretrain
 
-BUILD_VERSION = "v1"
+BUILD_VERSION = "v2"
 
 ORG = pretrain.ORG
 FINETUNE_REPO = f"{ORG}/lc-finetune"          # public: stars of the train and validation splits only
@@ -72,14 +72,22 @@ FINETUNE_HOST_SOURCES = {"ffi": 0.6, "2min": 0.2, "kepler": 0.2}
 # Source mix of real-transit and EB windows (TESS covers ffi and 2min)
 FINETUNE_REAL_TESS_SHARE = 0.6
 # Caps on windows per star in one category and split
-REAL_WINDOWS_PER_STAR = 12
+# v2: 30 (v1: 12). The per-star cap, not the SNR cut, was what limited real short-period rows.
+REAL_WINDOWS_PER_STAR = 30
 EB_WINDOWS_PER_STAR = 10
 HOST_WINDOWS_PER_STAR = 3
-# Real windows enter lc-finetune only when a planet transit is visibly there
-MIN_REAL_SNR_FINETUNE = 4.0
+# Real planets in lc-finetune are verified as a whole: their transits, folded over every sector and
+# quarter of the star, must reach this SNR (catches ephemerides that no longer land on the transits).
+# Transits of planets that fail it are labeled ignore (255), not positive.
+MIN_PLANET_FOLD_SNR = 7.0
+# A real window enters lc-finetune when its visible verified planet transits reach this combined SNR,
+# sqrt(sum of squared per-transit SNRs), so faint repeated transits that add up inside the window count.
+MIN_REAL_COMBINED_SNR = 4.0
 MIN_EB_SNR = 3.0
-# Share of real short-period rows reduced to one visible transit (others hidden as a data gap)
+# Share of real short-period rows reduced to one visible transit (others hidden as a data gap); the kept
+# transit must itself reach this per-transit SNR, so a crop never leaves only an invisible transit.
 SINGLE_TRANSIT_CROP_SHARE = 0.25
+SINGLE_TRANSIT_CROP_MIN_SNR = 4.0
 
 # lc-eval sizes per split (val and test). Real categories take every qualifying window.
 EVAL_ROWS = {"injected_batman": 20_000, "injected_transplant": 5_000, "negative_random": 20_000,
@@ -103,7 +111,9 @@ INJ_PERIOD_RANGE_D = (1.0, 730.0)             # log-uniform; about half the draw
 INJ_IMPACT_MAX = 0.9
 INJ_RP_RS_RANGE = (0.003, 0.3)
 INJ_MIN_A_RS = 3.0
-INJ_SNR_RANGE = {"finetune": (3.0, 60.0), "eval": (2.0, 40.0)}   # per-transit SNR, log-uniform
+# Target combined SNR of the injected transits observed in the window, log-uniform. Each transit gets
+# target / sqrt(transits observed), so a window with 13 transits at target 3 has per-transit SNR 0.8.
+INJ_SNR_RANGE = {"finetune": (3.0, 60.0), "eval": (2.0, 40.0)}
 INJ_EXPOSURE_DAYS = SLOT_DAYS                 # 30-minute integration
 INJ_SUPERSAMPLE = 15
 DEFAULT_STAR_RADIUS = 1.0

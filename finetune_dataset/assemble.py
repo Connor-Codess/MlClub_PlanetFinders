@@ -69,7 +69,8 @@ def row_measurements(table: pa.Table) -> pd.DataFrame:
                     max(visible) if visible else np.nan))
     frame = pd.DataFrame(out, columns=["transit_patch_flux", "negative_patch_flux", "best_visible_snr"])
     for name in ("sample_id", "dataset", "split", "category", "star_key", "source", "inj_model", "inj_snr",
-                 "inj_snr_target", "n_transit_patches", "coverage", "benchmark_tce_id"):
+                 "inj_snr_target", "inj_snr_total", "stacked_snr", "n_visible_transits", "n_transit_patches",
+                 "coverage", "benchmark_tce_id"):
         frame[name] = table.column(name).to_pandas()
     return frame
 
@@ -120,18 +121,23 @@ def checks(measured: pd.DataFrame, plan: dict) -> tuple[list[dict], dict]:
         if pos.empty:
             continue
         gap = float(group["negative_patch_flux"].median() - pos.median())
-        # lc-eval real windows have no SNR cut, so small planets only need to dip on average
-        needed = 0.25 if dataset == "eval" and category.startswith("real_planet") else 1.0
+        # lc-eval real windows have no SNR cut, and v2 lc-finetune windows and injections include faint
+        # transits that only add up over the window, so those groups only need to dip on average
+        faint = category.startswith("real_planet") or category.startswith("injected")
+        needed = 0.25 if dataset == "eval" and category.startswith("real_planet") else 0.5 if faint else 1.0
         ok &= gap >= needed
         label_rows.append(f"{dataset}/{category}: {gap:.2f} (needs {needed:g})")
     results.append({"gate": "labels", "ok": ok,
                     "detail": "negative minus transit patch flux, median: " + "; ".join(label_rows)})
 
-    inj = measured[measured["inj_model"].notna() & (measured["inj_snr"] > 0)]
-    ratio = (inj["best_visible_snr"] / inj["inj_snr"]).replace([np.inf, -np.inf], np.nan).dropna()
+    inj = measured[measured["inj_model"].notna() & (measured["inj_snr_total"] > 0)]
+    ratio = (inj["stacked_snr"] / inj["inj_snr_total"]).replace([np.inf, -np.inf], np.nan).dropna()
     median_ratio = float(ratio.median()) if len(ratio) else float("nan")
-    results.append({"gate": "injections", "ok": bool(0.8 <= median_ratio <= 1.3),
-                    "detail": f"measured / intended per-transit SNR, median {median_ratio:.3f} over {len(ratio):,} rows"})
+    target = (inj["inj_snr_total"] / inj["inj_snr_target"]).replace([np.inf, -np.inf], np.nan).dropna()
+    median_target = float(target.median()) if len(target) else float("nan")
+    results.append({"gate": "injections", "ok": bool(0.8 <= median_ratio <= 1.3 and 0.8 <= median_target <= 1.25),
+                    "detail": f"measured stacked / expected combined SNR, median {median_ratio:.3f}; expected / "
+                              f"target combined SNR, median {median_target:.3f}; over {len(ratio):,} rows"})
 
     stats = {
         "rows": measured.groupby(["dataset", "split", "category"]).size().rename("rows").reset_index()
@@ -141,6 +147,12 @@ def checks(measured: pd.DataFrame, plan: dict) -> tuple[list[dict], dict]:
         .to_dict("records"),
         "injected_snr_quantiles": {m: g["inj_snr"].quantile([0.1, 0.5, 0.9]).round(2).tolist()
                                    for m, g in inj.groupby("inj_model")},
+        "injected_combined_snr_quantiles": {m: g["inj_snr_total"].quantile([0.1, 0.5, 0.9]).round(2).tolist()
+                                            for m, g in inj.groupby("inj_model")},
+        "real_stacked_snr_quantiles": {
+            f"{d}/{s}/{c}": g["stacked_snr"].quantile([0.1, 0.5, 0.9]).round(2).tolist()
+            for (d, s, c), g in measured[measured["category"].str.startswith("real_planet")]
+            .groupby(["dataset", "split", "category"])},
         "real_transit_snr_median": measured[measured["category"].str.startswith("real_planet")]
         .groupby(["dataset", "split", "category"])["best_visible_snr"].median().round(2)
         .rename("median").reset_index().to_dict("records"),

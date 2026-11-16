@@ -63,17 +63,35 @@ def known_events(recipe: dict) -> list[Event]:
     return events
 
 
-def single_transit(window: dict, events: list[Event], rng: np.random.Generator) -> None:
-    """Keep one visible planet transit; hide the slots nearer to any other planet transit."""
+def single_transit(window: dict, events: list[Event], rng: np.random.Generator) -> bool:
+    """Keep one clearly visible planet transit; hide the slots nearer to any other planet transit.
+
+    Returns False (window unchanged) when no transit reaches SINGLE_TRANSIT_CROP_MIN_SNR, so a crop
+    never leaves only a transit too faint to see on its own.
+    """
     planets = sorted((e for e in events if e.is_planet), key=lambda e: e.center_slot)
-    visible = [e for e in planets if e.observed_fraction >= config.MIN_VISIBLE_FRACTION]
-    if len(planets) < 2 or not visible:
-        return
-    keep = visible[int(rng.integers(len(visible)))]
+    strong = [e for e in planets if e.observed_fraction >= config.MIN_VISIBLE_FRACTION
+              and e.snr >= config.SINGLE_TRANSIT_CROP_MIN_SNR]
+    if len(planets) < 2 or not strong:
+        return False
+    keep = strong[int(rng.integers(len(strong)))]
     index = planets.index(keep)
     lo = (planets[index - 1].center_slot + keep.center_slot) / 2.0 if index > 0 else 0.0
     hi = (planets[index + 1].center_slot + keep.center_slot) / 2.0 if index + 1 < len(planets) else float(config.WINDOW_SLOTS)
     hide_outside(window, lo, hi)
+    return True
+
+
+def stacked_visible(events: list[Event]) -> dict:
+    """Stacked measured SNR, sum(snr_i)/sqrt(n), of the strongest planet's visible transits."""
+    groups: dict[str, list[float]] = {}
+    for e in events:
+        if e.is_planet and e.observed_fraction >= config.MIN_VISIBLE_FRACTION:
+            groups.setdefault(e.ref, []).append(float(e.snr))
+    if not groups:
+        return {"stacked_snr": None, "n_visible_transits": 0}
+    best = max(groups.values(), key=lambda x: sum(x) / np.sqrt(len(x)))
+    return {"stacked_snr": float(sum(best) / np.sqrt(len(best))), "n_visible_transits": len(best)}
 
 
 def build_sample(recipe: dict, row: dict, templates: dict[str, dict]) -> dict:
@@ -89,8 +107,8 @@ def build_sample(recipe: dict, row: dict, templates: dict[str, dict]) -> dict:
     events = known_events(recipe)
     for e in events:
         e.measure(window["flux_z"], observed)
-    if recipe["single_transit_crop"]:
-        single_transit(window, events, rng)
+    cropped = bool(recipe["single_transit_crop"]) and single_transit(window, events, rng)
+    if cropped:
         observed = observed_mask(window["flags"])
         for e in events:
             e.measure(window["flux_z"], observed)
@@ -119,7 +137,7 @@ def build_sample(recipe: dict, row: dict, templates: dict[str, dict]) -> dict:
         "source_repo": REPO_NAMES[recipe["repo"]], "source_path": recipe["path"], "source_row": int(recipe["row"]),
         "sigma_p2p_ppm": row["sigma_p2p_ppm"], "tmag": row["tmag"], "kepmag": row["kepmag"],
         "teff": row["teff"], "radius": row["radius"], "quality_tier": row["quality_tier"],
-        "coverage": float(observed.mean()), "single_transit_crop": bool(recipe["single_transit_crop"]),
+        "coverage": float(observed.mean()), "single_transit_crop": cropped,
         **encode(window),
         "patch_label": labels["patch_label"].tobytes(),
         "patch_kind": labels["patch_kind"].tobytes(),
@@ -127,6 +145,7 @@ def build_sample(recipe: dict, row: dict, templates: dict[str, dict]) -> dict:
         "patch_center_offset": labels["patch_center_offset"].astype("<f2").tobytes(),
         "n_transit_patches": int((labels["patch_label"] == config.LABEL_TRANSIT).sum()),
         "has_transit": bool((labels["patch_label"] == config.LABEL_TRANSIT).any()),
+        **stacked_visible(events),
         "events": [e.as_record() for e in events if -e.duration_slots / 2 <= e.center_slot < config.WINDOW_SLOTS + e.duration_slots / 2],
         "benchmark_tce_id": recipe.get("tce_id"),
         "build_version": config.BUILD_VERSION,

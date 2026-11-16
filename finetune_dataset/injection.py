@@ -14,8 +14,10 @@ Two injection models:
                 integrated over the 30-minute slot.
     transplant  The phase-folded, measured transit of a real known planet
                 (templates.py), placed at that planet's own period.
-In both, the depth is chosen from a target per-transit SNR, so the set covers
-the detection threshold evenly instead of being dominated by easy transits.
+In both, the depth is chosen from a target combined SNR of the transits observed
+in the window (v2; v1 used a per-transit target), so the set covers the detection
+threshold evenly, and short periods include faint transits that only add up
+across the window.
 """
 
 from __future__ import annotations
@@ -108,6 +110,7 @@ class Event:
     snr: float = 0.0
     observed_fraction: float = 0.0
     depth_sigma: float = 0.0
+    expected_snr: float | None = None
 
     @property
     def is_planet(self) -> bool:
@@ -127,6 +130,7 @@ class Event:
             "snr": float(self.snr), "observed_fraction": float(self.observed_fraction),
             "visible": bool(self.observed_fraction >= config.MIN_VISIBLE_FRACTION),
             "is_planet": self.is_planet,
+            "expected_snr": None if self.expected_snr is None else float(self.expected_snr),
         }
 
 
@@ -237,6 +241,16 @@ def _centers(anchor: float, period_slots: float, half: float) -> list[float]:
     return [float(c) for c in np.arange(first, W + half, period_slots)]
 
 
+def observed_transits(centers: list[float], duration_slots: float, observed: np.ndarray) -> int:
+    """Number of transits with at least half of their in-transit slots observed."""
+    count = 0
+    for c in centers:
+        inside = np.abs(SLOT_CENTERS - c) < duration_slots / 2.0
+        if inside.any() and observed[inside].mean() >= config.MIN_VISIBLE_FRACTION:
+            count += 1
+    return max(count, 1)
+
+
 def batman_injection(rng: np.random.Generator, observed: np.ndarray, s: float, radius: float | None,
                      teff: float | None, snr_range: tuple[float, float]) -> Injection:
     import batman
@@ -251,17 +265,19 @@ def batman_injection(rng: np.random.Generator, observed: np.ndarray, s: float, r
     b = float(rng.uniform(0.0, config.INJ_IMPACT_MAX))
     u1, u2 = kipping_ld(rng)
     snr_target = float(math.exp(rng.uniform(*np.log(snr_range))))
+    anchor = _anchor(rng, observed)
 
     mu = math.sqrt(max(1.0 - b * b, 0.0))
     ld_center = (1.0 - u1 * (1.0 - mu) - u2 * (1.0 - mu) ** 2) / (1.0 - u1 / 3.0 - u2 / 6.0)
     rp = 0.05
     for _ in range(3):
-        n_in = max(duration_days(period, a_rs, rp, b) / config.SLOT_DAYS, 1.0)
-        depth = snr_target * s / math.sqrt(n_in)
+        dur_slots = duration_days(period, a_rs, rp, b) / config.SLOT_DAYS
+        n_obs = observed_transits(_centers(anchor, period / config.SLOT_DAYS, dur_slots / 2.0), dur_slots, observed)
+        per_transit = snr_target / math.sqrt(n_obs)
+        depth = per_transit * s / math.sqrt(max(dur_slots, 1.0))
         rp = float(np.clip(math.sqrt(max(depth, 0.0) / max(ld_center, 0.05)), *config.INJ_RP_RS_RANGE))
     duration = duration_days(period, a_rs, rp, b)
 
-    anchor = _anchor(rng, observed)
     params = batman.TransitParams()
     params.t0 = anchor * config.SLOT_DAYS
     params.per = period
@@ -279,7 +295,9 @@ def batman_injection(rng: np.random.Generator, observed: np.ndarray, s: float, r
     dur_slots = duration / config.SLOT_DAYS
     events = [Event(c, dur_slots, config.KIND_INJECTED_BATMAN, "injected_batman", "batman", "planet", period)
               for c in _centers(anchor, period / config.SLOT_DAYS, dur_slots / 2.0)]
-    snrs = [transit_snr(model, observed, e.center_slot, dur_slots, s) for e in events]
+    for e in events:
+        e.expected_snr = transit_snr(model, observed, e.center_slot, dur_slots, s)
+    snrs = [e.expected_snr for e in events]
     return Injection(np.asarray(model, dtype=np.float64), events, {
         "inj_model": "batman", "inj_period_d": period, "inj_t0_slot": anchor, "inj_rp_rs": rp,
         "inj_a_rs": a_rs, "inj_b": b, "inj_u1": u1, "inj_u2": u2, "inj_duration_h": duration * 24.0,
@@ -307,12 +325,14 @@ def transplant_injection(rng: np.random.Generator, observed: np.ndarray, s: floa
     centers = _centers(anchor, period / config.SLOT_DAYS, dur_slots / 2.0 + 2.0)
     full = template_model(template, centers)
     snr_target = float(math.exp(rng.uniform(*np.log(snr_range))))
-    full_snr = max(transit_snr(full, observed, c, dur_slots, s) for c in centers)
+    full_snr = math.sqrt(sum(transit_snr(full, observed, c, dur_slots, s) ** 2 for c in centers))
     scale = min(1.0, snr_target / full_snr) if full_snr > 0 else 1.0
     model = 1.0 - scale * (1.0 - full)
     events = [Event(c, dur_slots, config.KIND_INJECTED_TRANSPLANT, "injected_transplant", template["template_id"],
                     "planet", period) for c in centers]
-    snrs = [transit_snr(model, observed, e.center_slot, dur_slots, s) for e in events]
+    for e in events:
+        e.expected_snr = transit_snr(model, observed, e.center_slot, dur_slots, s)
+    snrs = [e.expected_snr for e in events]
     return Injection(model, events, {
         "inj_model": "transplant", "inj_period_d": period, "inj_t0_slot": anchor, "inj_rp_rs": None,
         "inj_a_rs": None, "inj_b": None, "inj_u1": None, "inj_u2": None,

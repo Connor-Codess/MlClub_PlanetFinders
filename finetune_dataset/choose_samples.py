@@ -14,17 +14,25 @@ What it does
 
 Rules (finetune_dataset/config.py has the numbers)
     lc-finetune train/validation  stars of the train/validation splits.
-        real_planet_short / real_planet_long   default windows with a planet transit of
-            per-transit SNR >= 4 (60% TESS, 40% Kepler when available; at most 12
-            windows per star). TESS planets with P >= 20 d are all held out, so
-            real long-period transits here come from Kepler DR24 planet candidates.
+        real_planet_short / real_planet_long   default windows of verified planets whose
+            visible transits stack to SNR >= 4 inside the window (60% TESS, 40% Kepler
+            when available; at most 30 windows per star). A planet is verified when all
+            of its visible transits on the star, stacked, reach SNR 7; transits of
+            planets that fail are labeled ignore. TESS planets with P >= 20 d are all
+            held out, so real long-period transits here come from Kepler DR24 planet
+            candidates.
         negative_eb   windows of non-planet stars with an EB eclipse or a false-positive
             TOI/TCE event of SNR >= 3 (at most 10 per star).
         injected_batman, injected_transplant, negative_random   windows of stars with no
             catalog entry (60% FFI, 20% 2-min, 20% Kepler; at most 3 per star and
             category). Shortfalls in any category are filled with batman injections.
-        25% of real_planet_short rows with two or more transits keep one transit
-            visible and hide the rest as a data gap.
+        25% of real_planet_short rows with two or more transits, one of them at
+            per-transit SNR >= 4, keep that transit visible and hide the rest as a data gap.
+
+Stacked SNR
+    The stacked SNR of n transits of one planet is sum(snr_i) / sqrt(n). For transits of
+    equal depth it equals sqrt(sum(snr_i^2)) of the noiseless signal, and unlike that sum
+    it has zero mean on pure noise, so many faint noise dips cannot add up to a detection.
     lc-eval val/test  held-out stars only: scoreboard_hosts halves and list_excluded
         real_validation/real_test.
         real_planet_long / real_planet_short   every window with a planet transit at
@@ -78,22 +86,77 @@ def read_all(scan_dir: Path, kind: str) -> pd.DataFrame:
     return pd.concat([pd.read_parquet(f) for f in files], ignore_index=True)
 
 
+def stacked_snr(snrs) -> float:
+    snrs = [float(x) for x in snrs]
+    return sum(snrs) / np.sqrt(len(snrs)) if snrs else 0.0
+
+
+def planet_fold_snr(events: pd.DataFrame) -> dict[tuple[str, str], float]:
+    """Stacked SNR of every visible transit of each planet, per star; best source wins.
+
+    Overlapping windows repeat a transit, so each one counts once by (segment, absolute
+    centre). TESS FFI and 2-min data cover the same sectors, so sources are stacked
+    separately and the best is kept rather than adding the same transit twice.
+    """
+    seen = {}
+    for star, segment, source, offset, evs in zip(events["star_key"], events["segment_id"], events["source"],
+                                                  events["start_offset"], events["events"]):
+        for e in evs:
+            if e["cls"] != "planet" or e["observed_fraction"] < config.MIN_VISIBLE_FRACTION:
+                continue
+            key = (star, e["ref"], source, segment, int(round(offset + e["center_slot"])))
+            seen[key] = float(e["snr"])
+    groups: dict[tuple[str, str, str], list[float]] = {}
+    for (star, ref, source, _, _), snr in seen.items():
+        groups.setdefault((star, ref, source), []).append(snr)
+    best: dict[tuple[str, str], float] = {}
+    for (star, ref, _), snrs in groups.items():
+        best[(star, ref)] = max(best.get((star, ref), -np.inf), stacked_snr(snrs))
+    return best
+
+
+def mark_unverified(events: pd.DataFrame, fold: dict[tuple[str, str], float]) -> pd.DataFrame:
+    """Planet transits of planets whose stacked SNR is below MIN_PLANET_FOLD_SNR become cls 'unknown'."""
+    def relabel(star, evs):
+        out = []
+        for e in evs:
+            if e["cls"] == "planet" and fold.get((star, e["ref"]), 0.0) < config.MIN_PLANET_FOLD_SNR:
+                e = {**e, "cls": "unknown"}
+            out.append(e)
+        return out
+    out = events.copy()
+    out["events"] = [relabel(star, list(evs)) for star, evs in zip(events["star_key"], events["events"])]
+    return out
+
+
 def window_features(events: pd.DataFrame) -> pd.DataFrame:
-    """Per candidate window: best planet SNR, long/short, visible planets, EB/FP signal."""
+    """Per candidate window: visible planets, best and stacked planet SNR, long/short, EB/FP signal.
+
+    combined_planet_snr is the best stacked SNR of any one planet's visible transits in the
+    window. strong_long marks windows where a long-period planet alone reaches the combined
+    threshold, so it decides long versus short in lc-finetune; any_long does it in lc-eval.
+    """
     def summarize(evs) -> tuple:
         planet = [e for e in evs if e["cls"] == "planet"]
         visible = [e for e in planet if e["observed_fraction"] >= config.MIN_VISIBLE_FRACTION]
         other = [e for e in evs if e["cls"] in ("eclipsing_binary", "false_positive")
                  and e["observed_fraction"] >= config.MIN_VISIBLE_FRACTION]
         best = max((e["snr"] for e in visible), default=0.0)
-        strong_long = any(is_long_period(e["period_d"]) and e["snr"] >= config.MIN_REAL_SNR_FINETUNE for e in visible)
+        per_ref: dict[str, list] = {}
+        for e in visible:
+            per_ref.setdefault(e["ref"], []).append(e)
+        stacked = {ref: stacked_snr(x["snr"] for x in group) for ref, group in per_ref.items()}
+        combined = max(stacked.values(), default=0.0)
+        strong_long = any(is_long_period(group[0]["period_d"]) and stacked[ref] >= config.MIN_REAL_COMBINED_SNR
+                          for ref, group in per_ref.items())
         any_long = any(is_long_period(e["period_d"]) for e in visible)
-        return (len(visible), best, strong_long, any_long, max((e["snr"] for e in other), default=0.0))
+        return (len(visible), best, combined, strong_long, any_long,
+                max((e["snr"] for e in other), default=0.0))
 
     values = [summarize(list(evs)) for evs in events["events"]]
     out = events.copy()
-    out[["n_visible_planet", "best_planet_snr", "strong_long", "any_long", "best_eb_snr"]] = pd.DataFrame(
-        values, index=events.index)
+    out[["n_visible_planet", "best_planet_snr", "combined_planet_snr", "strong_long", "any_long",
+         "best_eb_snr"]] = pd.DataFrame(values, index=events.index)
     return out
 
 
@@ -140,14 +203,15 @@ def finetune_split(split: str, pool: str, feats: pd.DataFrame, hosts: pd.DataFra
     templates = templates[~templates["star_key"].isin(excluded)]
     chosen = []
 
-    real = mine[(mine["n_visible_planet"] > 0) & (mine["best_planet_snr"] >= config.MIN_REAL_SNR_FINETUNE)]
+    real = mine[(mine["n_visible_planet"] > 0) & (mine["combined_planet_snr"] >= config.MIN_REAL_COMBINED_SNR)]
     for category, frame in (("real_planet_long", real[real["strong_long"]]),
                             ("real_planet_short", real[~real["strong_long"]])):
         picked = take_mixed(frame, quota[category], rng, config.REAL_WINDOWS_PER_STAR,
                             tess_share=config.FINETUNE_REAL_TESS_SHARE)
         picked = picked.assign(category=category)
         if category == "real_planet_short":
-            eligible = picked["n_visible_planet"] >= 2
+            eligible = ((picked["n_visible_planet"] >= 2)
+                        & (picked["best_planet_snr"] >= config.SINGLE_TRANSIT_CROP_MIN_SNR))
             picked["single_transit_crop"] = eligible & (rng.uniform(size=len(picked)) < config.SINGLE_TRANSIT_CROP_SHARE)
         chosen.append(picked)
 
@@ -270,10 +334,15 @@ def main() -> None:
     templates = build_templates(cutouts)
     LOG.info("Templates: %s", templates.groupby(["pool", "mission"]).size().to_dict() if len(templates) else {})
     feats = window_features(events)
+    fold = planet_fold_snr(events[events["pool"].isin([config.POOL_TRAIN, config.POOL_VALIDATION])])
+    verified = sum(v >= config.MIN_PLANET_FOLD_SNR for v in fold.values())
+    LOG.info("Planets on train/validation stars: %d with visible transits, %d verified (stacked SNR >= %.0f)",
+             len(fold), verified, config.MIN_PLANET_FOLD_SNR)
+    tuning = window_features(mark_unverified(events, fold))
 
     frames = []
     for split, pool in (("train", config.POOL_TRAIN), ("validation", config.POOL_VALIDATION)):
-        frames += finetune_split(split, pool, feats, hosts, templates, rng, args.scale, excluded)
+        frames += finetune_split(split, pool, tuning, hosts, templates, rng, args.scale, excluded)
     for split in ("val", "test"):
         frames += eval_split(split, feats, hosts, templates, rng, args.scale)
     frames += benchmark_samples(bench, rng)
@@ -293,6 +362,7 @@ def main() -> None:
         "templates": {f"{pool}/{mission}": int(n) for (pool, mission), n in
                       templates.groupby(["pool", "mission"]).size().items()},
         "matrix": [{"source": f.split("/")[0], "stem": f.split("/")[1]} for f in files],
+        "planets": {"with_visible_transits": len(fold), "verified": int(verified)},
         "scale": args.scale,
     }
     (args.out / "plan.json").write_text(json.dumps(plan, indent=2))

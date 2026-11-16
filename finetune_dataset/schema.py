@@ -21,6 +21,7 @@ SAMPLE_EVENT = pa.struct([
     ("center_slot", pa.float32()), ("duration_slots", pa.float32()), ("kind", pa.string()),
     ("ref", pa.string()), ("cls", pa.string()), ("period_d", pa.float64()), ("snr", pa.float32()),
     ("observed_fraction", pa.float32()), ("visible", pa.bool_()), ("is_planet", pa.bool_()),
+    ("expected_snr", pa.float32()),
 ])
 
 SAMPLE_SCHEMA = pa.schema([
@@ -37,6 +38,7 @@ SAMPLE_SCHEMA = pa.schema([
     ("patch_label", pa.binary()), ("patch_kind", pa.binary()), ("patch_overlap", pa.binary()),
     ("patch_center_offset", pa.binary()),
     ("n_transit_patches", pa.int16()), ("has_transit", pa.bool_()),
+    ("stacked_snr", pa.float32()), ("n_visible_transits", pa.int16()),
     ("events", pa.list_(SAMPLE_EVENT)),
     ("inj_model", pa.string()), ("inj_period_d", pa.float64()), ("inj_t0_btjd", pa.float64()),
     ("inj_rp_rs", pa.float32()), ("inj_a_rs", pa.float32()), ("inj_b", pa.float32()),

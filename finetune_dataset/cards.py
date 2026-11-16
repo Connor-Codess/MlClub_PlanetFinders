@@ -44,7 +44,8 @@ COLUMNS_TEXT = """| Column | Meaning |
 | `fill`, `flags` | uint8 channels, 1,296 slots (bit 0 of `flags` = observed) |
 | `patch_label`, `patch_kind`, `patch_overlap`, `patch_center_offset` | Per-patch targets, 162 patches |
 | `n_transit_patches`, `has_transit` | Count of patches with label 1 |
-| `events` | Every event in the window: center and duration in slots, kind, catalog reference, class, period, measured SNR, observed fraction, visible, is_planet |
+| `stacked_snr`, `n_visible_transits` | Combined measured SNR, sum(snr) / sqrt(n), of the strongest planet's visible transits, and n (null and 0 without a planet) |
+| `events` | Every event in the window: center and duration in slots, kind, catalog reference, class, period, measured SNR, observed fraction, visible, is_planet, expected SNR (injections) |
 | `single_transit_crop` | True when all but one transit were hidden as a data gap |
 | `inj_*` | Injection parameters (model, period, epoch, Rp/R*, a/R*, b, limb darkening, duration, depth, intended and achieved SNR, template id, depth scale) |
 | `benchmark_tce_id` | lc-benchmarks only: the published signal this window belongs to |"""
@@ -108,8 +109,11 @@ exceed 27 d, so most of those windows hold one transit); impact parameter unifor
 quadratic limb darkening drawn uniformly over the physical range (Kipping 2013); circular orbit; a/R* from the
 period and the host's TIC radius with a main-sequence mass (stars above {config.HOST_MAX_RADIUS_RSUN:g} R_sun are
 not used as hosts); integrated over the 30-minute slot ({config.INJ_SUPERSAMPLE}x supersampling). The depth is set
-from a target per-transit SNR drawn log-uniformly (lc-finetune {config.INJ_SNR_RANGE['finetune'][0]:g}-{config.INJ_SNR_RANGE['finetune'][1]:g},
-lc-eval {config.INJ_SNR_RANGE['eval'][0]:g}-{config.INJ_SNR_RANGE['eval'][1]:g}), so the set covers the detection threshold evenly.
+from a target combined SNR of the transits observed in the window, drawn log-uniformly (lc-finetune
+{config.INJ_SNR_RANGE['finetune'][0]:g}-{config.INJ_SNR_RANGE['finetune'][1]:g}, lc-eval {config.INJ_SNR_RANGE['eval'][0]:g}-{config.INJ_SNR_RANGE['eval'][1]:g}); each transit gets target / sqrt(transits observed). A
+single transit therefore gets the whole target, while a 2-day planet with 13 transits at target 3 gets 0.8 per
+transit: too faint to see one at a time, visible only when the model combines them. `inj_snr_target` is the
+target, `inj_snr_total` the expected combined SNR and `inj_snr` the expected SNR of the best single transit.
 One transit is always placed on observed data. The model multiplies relative flux:
 `flux_z' = ((1 + s * flux_z) * m - 1) / s` with `s = sigma_p2p_ppm * 1e-6`.
 
@@ -148,9 +152,14 @@ By source:
 {source_table(measured, "finetune")}
 
 Real long-period transits come from Kepler: every TESS planet candidate with P >= 20 d is held out for testing.
-Real windows need a visible transit (per-transit SNR >= {config.MIN_REAL_SNR_FINETUNE:g}); at most {config.REAL_WINDOWS_PER_STAR} windows per star, 60%
-TESS where available. In {config.SINGLE_TRANSIT_CROP_SHARE:.0%} of `real_planet_short` rows with two or more transits, all but one transit are
-hidden as a data gap (`single_transit_crop`), so the model does not learn to expect repeats. Injection hosts
+Real planets are verified as a whole: their visible transits on the star, stacked over every sector or quarter,
+must reach SNR {config.MIN_PLANET_FOLD_SNR:g}. Transits of planets that fail this are labeled ignore (255), since their ephemeris
+may no longer land on the dips. A window is used when the visible transits of one verified planet in it stack to
+SNR >= {config.MIN_REAL_COMBINED_SNR:g} (`stacked_snr`, sum of per-transit SNRs over the square root of their number), so faint
+short-period planets whose single transits are not visible on their own still count; every visible transit of
+the planet is labeled 1. At most {config.REAL_WINDOWS_PER_STAR} windows per star, 60% TESS where available. In {config.SINGLE_TRANSIT_CROP_SHARE:.0%} of
+`real_planet_short` rows with two or more transits, one of them at per-transit SNR >= {config.SINGLE_TRANSIT_CROP_MIN_SNR:g}, that transit is
+kept and the rest are hidden as a data gap (`single_transit_crop`), so the model does not learn to expect repeats. Injection hosts
 and random negatives are 60% FFI, 20% 2-min and 20% Kepler, at most {config.HOST_WINDOWS_PER_STAR} windows per star and category.
 
 ## Labels
@@ -209,14 +218,17 @@ By source:
 {source_table(measured, "eval")}
 
 Real categories hold every window with a planet transit at least half observed, with no SNR cut (at most
-{config.EVAL_REAL_WINDOWS_PER_STAR} windows per star); `events[].snr` gives the measured SNR so recall can be binned. Injections and
+{config.EVAL_REAL_WINDOWS_PER_STAR} windows per star); `events[].snr` gives the measured SNR of each transit and `stacked_snr` the
+combined SNR of the window's visible transits, so recall can be binned by both. Injections and
 random negatives use FFI windows only, since FFI is what the search runs on. Transplant templates come from
 validation-split planets, which lc-finetune does not use as templates.
 
 ## Suggested metrics
 
-- Recall of injected transits by per-transit SNR (`inj_snr`) and period (`inj_period_d`): the injection-recovery
-  curve that ranks model variants.
+- Recall of injected transits by combined SNR (`inj_snr_total`), per-transit SNR (`inj_snr`) and period
+  (`inj_period_d`): the injection-recovery curves that rank model variants. Short periods at low per-transit
+  but adequate combined SNR test whether the model stacks repeated transits.
+- Recall on `real_planet_short` binned by `stacked_snr` and by the per-transit `events[].snr`.
 - False alarms per window on `negative_random`, and on `negative_eb` (eclipses that must not be called planets).
 - Recall on `real_planet_long` (the science target: single transits and duotransits) and `real_planet_short`.
 

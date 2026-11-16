@@ -87,7 +87,7 @@ class TestInjection:
         assert out[10] == pytest.approx(-10.0)
         assert out[11] == 0.0
 
-    def test_batman_reaches_target_snr(self):
+    def test_batman_reaches_target_combined_snr(self):
         pytest.importorskip("batman")
         rng = np.random.default_rng(3)
         observed = np.ones(W, bool)
@@ -96,8 +96,21 @@ class TestInjection:
             inj = batman_injection(rng, observed, 1e-3, 1.0, 5800.0, (8.0, 8.0))
             assert inj.params["inj_period_d"] >= config.INJ_PERIOD_RANGE_D[0]
             assert inj.events and all(e.kind_code == config.KIND_INJECTED_BATMAN for e in inj.events)
-            achieved.append(inj.params["inj_snr"])
+            assert inj.params["inj_snr"] <= inj.params["inj_snr_total"] + 1e-6
+            achieved.append(inj.params["inj_snr_total"])
         assert np.median(achieved) == pytest.approx(8.0, rel=0.35)
+
+    def test_many_transits_are_individually_faint(self):
+        pytest.importorskip("batman")
+        rng = np.random.default_rng(5)
+        observed = np.ones(W, bool)
+        faint = 0
+        for _ in range(200):
+            inj = batman_injection(rng, observed, 1e-3, 1.0, 5800.0, (4.0, 4.0))
+            if inj.params["inj_period_d"] < 3.0 and inj.params["inj_rp_rs"] > config.INJ_RP_RS_RANGE[0]:
+                assert inj.params["inj_snr"] < 2.5
+                faint += 1
+        assert faint > 0
 
     def test_transplant_never_deepens(self):
         dt = np.arange(-6, 6.01, 1 / 6)
@@ -107,6 +120,38 @@ class TestInjection:
         assert inj.params["inj_depth_scale"] == 1.0
         assert inj.model.min() == pytest.approx(0.99)
         assert len(inj.events) >= 8
+
+
+class TestStacking:
+    def window(self, snrs, ref="TOI-1.01 PC", period=3.0, start=0, segment="seg"):
+        evs = [{"center_slot": 50.0 * (i + 1), "duration_slots": 6.0, "kind": "toi", "ref": ref, "cls": "planet",
+                "period_d": period, "snr": x, "observed_fraction": 1.0, "depth_sigma": 0.0}
+               for i, x in enumerate(snrs)]
+        return {"star_key": "tic:1", "segment_id": segment, "source": "ffi", "start_offset": start, "events": evs}
+
+    def test_faint_repeats_stack_and_noise_does_not(self):
+        from finetune_dataset.choose_samples import window_features
+        frame = pd.DataFrame([self.window([2.0] * 9), self.window([1.0, -1.0] * 8)])
+        feats = window_features(frame)
+        assert feats["best_planet_snr"].iloc[0] == pytest.approx(2.0)
+        assert feats["combined_planet_snr"].iloc[0] == pytest.approx(6.0)
+        assert feats["combined_planet_snr"].iloc[1] == pytest.approx(0.0)
+
+    def test_overlapping_windows_count_a_transit_once(self):
+        from finetune_dataset.choose_samples import planet_fold_snr
+        a = self.window([3.0, 3.0], start=0)
+        b = self.window([3.0], start=50)          # second window starts on the first transit
+        b["events"][0]["center_slot"] = 50.0      # absolute slot 100: the same transit as a's second
+        fold = planet_fold_snr(pd.DataFrame([a, b]))
+        assert fold[("tic:1", "TOI-1.01 PC")] == pytest.approx(6.0 / np.sqrt(2))
+
+    def test_unverified_planets_become_unknown(self):
+        from finetune_dataset.choose_samples import mark_unverified, planet_fold_snr
+        frame = pd.DataFrame([self.window([1.0, 1.5]), self.window([8.0, 9.0], ref="TOI-2.01 PC")])
+        frame.loc[1, "star_key"] = "tic:2"
+        marked = mark_unverified(frame, planet_fold_snr(frame))
+        assert {e["cls"] for e in marked["events"].iloc[0]} == {"unknown"}
+        assert {e["cls"] for e in marked["events"].iloc[1]} == {"planet"}
 
 
 class TestTemplates:

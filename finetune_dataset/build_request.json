@@ -1,5 +1,5 @@
 {
-  "note": "Editing and pushing this file starts the Build fine-tuning datasets workflow. reuse_run_id reruns only the assemble job on that run's materialized rows (run 43810358608 built all 540,374 rows). This rerun republishes with a corrected lc-benchmarks usage example; the rows are identical.",
+  "note": "v2 full build: planets verified by stacked SNR over the star, real windows selected by stacked in-window SNR >= 4, per-star cap 30, injections targeted on combined SNR so short periods include faint per-transit depths, new stacked_snr and n_visible_transits columns.",
   "sources": [
     "ffi",
     "2min",
@@ -7,5 +7,5 @@
   ],
   "files": null,
   "scale": 1.0,
-  "reuse_run_id": 43810358608
+  "reuse_run_id": null
 }
