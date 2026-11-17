@@ -4,11 +4,12 @@
 #   pack-eval  packs lc-eval val and scores the box-filter baseline on it
 #   pack       one job per arm: packs the arm's rows into arrays
 #   train      one job per arm and seed: trains the small detector, scores it on lc-eval val
-#   aggregate  means, seed spread and differences from baseline for every arm
+#   aggregate  means, seed spread and differences from baseline for every arm, plus the subset
+#              analysis of analyze.py
 #
 # Start it by editing experiments/finetune_mix/run_request.json and pushing, or from the Actions tab.
 # Requires the HF_TOKEN repository secret (read access to the private lc-eval).
-# Results: the "summary" artifact (summary.md, summary.json, runs.csv) and one "result-<arm>-s<seed>"
+# Results: the "summary" artifact (summary.md, summary.json, runs.csv, extra.json) and one "result-<arm>-s<seed>"
 # artifact per run.
 
 name: Fine-tuning data mix experiments
@@ -89,6 +90,11 @@ jobs:
           path: build/mix/eval
           compression-level: 0
           retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eval-meta
+          path: build/mix/eval/meta.parquet
+          retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
           name: result-box_filter
@@ -189,9 +195,15 @@ jobs:
         with:
           pattern: result-*
           path: build/mix/results
+      - uses: actions/download-artifact@v4
+        with:
+          name: eval-meta
+          path: build/mix/eval
       - name: Summarize
         run: |
           python -m experiments.finetune_mix.aggregate --results build/mix/results --out build/mix/summary
+          python -m experiments.finetune_mix.analyze --results build/mix/results \
+            --eval-meta build/mix/eval/meta.parquet --out build/mix/summary
           cat build/mix/summary/summary.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:

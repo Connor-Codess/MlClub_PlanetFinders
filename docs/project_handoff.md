@@ -1,4 +1,4 @@
-# Exoplanet ML pipeline: status and handoff (updated 2026-11-16)
+# Exoplanet ML pipeline: status and handoff (updated 2026-11-17)
 
 Read this first when picking up the planet-finding project. The same notes are kept in the team's
 Claude project "Ml Club Space".
@@ -95,6 +95,13 @@ lightkurve's default quality bitmask (17087) and only requires finite time and f
    `docs/finetune_dataset_build_log.md` (live copy: https://claude.ai/artifact/7h6fmA3BG5vne1v8yvHAek).
    Open: benchmark stars are still in lc-pretrain (skip them with the loader's `exclude_star_keys`, or rebuild),
    TESS benchmark coverage is partial (QLP versus TESS-SPOC), masking function for pretraining not written yet.
-6. Faculty sponsor and Torch access.
-7. Detector training on lc-finetune; injection-recovery curves on lc-eval; scores on lc-benchmarks.
-8. Duotransit matching, vetting, CTOI submission.
+6. Done 2026-11-17: data mix experiments (`experiments/finetune_mix/`, run 44000179513). Thirteen
+   lc-finetune mixes were each used to train a 0.35M-parameter detector 3 times on GitHub's CPU runners,
+   scored on lc-eval val. The v2 mix is the best-balanced; its stacked-SNR rule raises recall on faint
+   short-period transits from 14.3% to 20.3%. Real planets deeper than SNR 25 are mostly missed (28.7% of
+   long-period ones), because training injections stop near SNR 50 while EB negatives are deep.
+   Next: add deep injections (combined SNR 60-300) and TESS-only injection hosts, then test them in a second
+   wave. Findings: `experiments/finetune_mix/results/wave1/README.md`.
+7. Faculty sponsor and Torch access.
+8. Detector training on lc-finetune; injection-recovery curves on lc-eval; scores on lc-benchmarks.
+9. Duotransit matching, vetting, CTOI submission.

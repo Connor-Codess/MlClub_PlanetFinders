@@ -1,0 +1,616 @@
+{
+ "arms": {
+  "baseline": {
+   "stack_regime_inj": [
+    0.2033,
+    0.0282
+   ],
+   "single_transit_inj": [
+    0.357,
+    0.0016
+   ],
+   "real_short_faint": [
+    0.0074,
+    0.0064
+   ],
+   "real_short_bright": [
+    0.4966,
+    0.0305
+   ],
+   "real_long_single": [
+    0.314,
+    0.0088
+   ],
+   "real_long_deep": [
+    0.287,
+    0.0266
+   ],
+   "neg1_injected": [
+    0.3258,
+    0.0008
+   ],
+   "neg1_real_short": [
+    0.3187,
+    0.015
+   ],
+   "neg1_real_long": [
+    0.2693,
+    0.0144
+   ],
+   "neg1_eb_false_alarm": [
+    0.0396,
+    0.0055
+   ]
+  },
+  "batman_only": {
+   "stack_regime_inj": [
+    0.1576,
+    0.0218
+   ],
+   "single_transit_inj": [
+    0.3676,
+    0.0081
+   ],
+   "real_short_faint": [
+    0.0,
+    0.0
+   ],
+   "real_short_bright": [
+    0.4528,
+    0.0506
+   ],
+   "real_long_single": [
+    0.3241,
+    0.0267
+   ],
+   "real_long_deep": [
+    0.2971,
+    0.0507
+   ],
+   "neg1_injected": [
+    0.3223,
+    0.0036
+   ],
+   "neg1_real_short": [
+    0.2923,
+    0.0247
+   ],
+   "neg1_real_long": [
+    0.2803,
+    0.0137
+   ],
+   "neg1_eb_false_alarm": [
+    0.0352,
+    0.0064
+   ]
+  },
+  "box_filter": {
+   "stack_regime_inj": [
+    0.0063,
+    null
+   ],
+   "single_transit_inj": [
+    0.0077,
+    null
+   ],
+   "real_short_faint": [
+    0.0,
+    null
+   ],
+   "real_short_bright": [
+    0.0535,
+    null
+   ],
+   "real_long_single": [
+    0.1527,
+    null
+   ],
+   "real_long_deep": [
+    0.5263,
+    null
+   ],
+   "neg1_injected": [
+    0.0013,
+    null
+   ],
+   "neg1_real_short": [
+    0.0055,
+    null
+   ],
+   "neg1_real_long": [
+    0.0369,
+    null
+   ],
+   "neg1_eb_false_alarm": [
+    0.0885,
+    null
+   ]
+  },
+  "no_crop": {
+   "stack_regime_inj": [
+    0.1844,
+    0.016
+   ],
+   "single_transit_inj": [
+    0.3573,
+    0.0063
+   ],
+   "real_short_faint": [
+    0.0037,
+    0.0064
+   ],
+   "real_short_bright": [
+    0.4887,
+    0.0176
+   ],
+   "real_long_single": [
+    0.3157,
+    0.0047
+   ],
+   "real_long_deep": [
+    0.2947,
+    0.0057
+   ],
+   "neg1_injected": [
+    0.324,
+    0.0012
+   ],
+   "neg1_real_short": [
+    0.326,
+    0.0162
+   ],
+   "neg1_real_long": [
+    0.2762,
+    0.0087
+   ],
+   "neg1_eb_false_alarm": [
+    0.0347,
+    0.0026
+   ]
+  },
+  "no_eb": {
+   "stack_regime_inj": [
+    0.1868,
+    0.0367
+   ],
+   "single_transit_inj": [
+    0.3392,
+    0.0005
+   ],
+   "real_short_faint": [
+    0.0,
+    0.0
+   ],
+   "real_short_bright": [
+    0.6367,
+    0.0193
+   ],
+   "real_long_single": [
+    0.3949,
+    0.0186
+   ],
+   "real_long_deep": [
+    0.5098,
+    0.0417
+   ],
+   "neg1_injected": [
+    0.2887,
+    0.0051
+   ],
+   "neg1_real_short": [
+    0.3851,
+    0.0095
+   ],
+   "neg1_real_long": [
+    0.294,
+    0.0202
+   ],
+   "neg1_eb_false_alarm": [
+    0.071,
+    0.006
+   ]
+  },
+  "no_injected": {
+   "stack_regime_inj": [
+    0.0783,
+    0.015
+   ],
+   "single_transit_inj": [
+    0.1814,
+    0.0138
+   ],
+   "real_short_faint": [
+    0.0148,
+    0.0064
+   ],
+   "real_short_bright": [
+    0.6715,
+    0.0087
+   ],
+   "real_long_single": [
+    0.3924,
+    0.0184
+   ],
+   "real_long_deep": [
+    0.3868,
+    0.0664
+   ],
+   "neg1_injected": [
+    0.169,
+    0.0124
+   ],
+   "neg1_real_short": [
+    0.4221,
+    0.002
+   ],
+   "neg1_real_long": [
+    0.2835,
+    0.0091
+   ],
+   "neg1_eb_false_alarm": [
+    0.082,
+    0.0043
+   ]
+  },
+  "no_real": {
+   "stack_regime_inj": [
+    0.2527,
+    0.0121
+   ],
+   "single_transit_inj": [
+    0.3674,
+    0.0047
+   ],
+   "real_short_faint": [
+    0.0074,
+    0.0064
+   ],
+   "real_short_bright": [
+    0.4263,
+    0.0125
+   ],
+   "real_long_single": [
+    0.3359,
+    0.012
+   ],
+   "real_long_deep": [
+    0.3125,
+    0.0233
+   ],
+   "neg1_injected": [
+    0.3385,
+    0.0037
+   ],
+   "neg1_real_short": [
+    0.2785,
+    0.0053
+   ],
+   "neg1_real_long": [
+    0.2947,
+    0.01
+   ],
+   "neg1_eb_false_alarm": [
+    0.0393,
+    0.0008
+   ]
+  },
+  "rows_160k": {
+   "stack_regime_inj": [
+    0.2025,
+    0.0163
+   ],
+   "single_transit_inj": [
+    0.3614,
+    0.0064
+   ],
+   "real_short_faint": [
+    0.0037,
+    0.0064
+   ],
+   "real_short_bright": [
+    0.5023,
+    0.0233
+   ],
+   "real_long_single": [
+    0.3206,
+    0.0254
+   ],
+   "real_long_deep": [
+    0.2971,
+    0.0306
+   ],
+   "neg1_injected": [
+    0.3262,
+    0.0028
+   ],
+   "neg1_real_short": [
+    0.3323,
+    0.0271
+   ],
+   "neg1_real_long": [
+    0.2751,
+    0.0314
+   ],
+   "neg1_eb_false_alarm": [
+    0.0396,
+    0.0017
+   ]
+  },
+  "rows_20k": {
+   "stack_regime_inj": [
+    0.1216,
+    0.013
+   ],
+   "single_transit_inj": [
+    0.3071,
+    0.0026
+   ],
+   "real_short_faint": [
+    0.0037,
+    0.0064
+   ],
+   "real_short_bright": [
+    0.4299,
+    0.0158
+   ],
+   "real_long_single": [
+    0.2524,
+    0.0152
+   ],
+   "real_long_deep": [
+    0.2501,
+    0.0339
+   ],
+   "neg1_injected": [
+    0.2751,
+    0.0053
+   ],
+   "neg1_real_short": [
+    0.2815,
+    0.0044
+   ],
+   "neg1_real_long": [
+    0.2219,
+    0.0133
+   ],
+   "neg1_eb_false_alarm": [
+    0.0363,
+    0.0031
+   ]
+  },
+  "rows_40k": {
+   "stack_regime_inj": [
+    0.1713,
+    0.0087
+   ],
+   "single_transit_inj": [
+    0.3426,
+    0.003
+   ],
+   "real_short_faint": [
+    0.0074,
+    0.0064
+   ],
+   "real_short_bright": [
+    0.4596,
+    0.0372
+   ],
+   "real_long_single": [
+    0.2988,
+    0.0047
+   ],
+   "real_long_deep": [
+    0.2668,
+    0.0143
+   ],
+   "neg1_injected": [
+    0.3085,
+    0.0092
+   ],
+   "neg1_real_short": [
+    0.2941,
+    0.0278
+   ],
+   "neg1_real_long": [
+    0.2513,
+    0.0078
+   ],
+   "neg1_eb_false_alarm": [
+    0.0363,
+    0.0019
+   ]
+  },
+  "strong_injections": {
+   "stack_regime_inj": [
+    0.1686,
+    0.0337
+   ],
+   "single_transit_inj": [
+    0.3512,
+    0.007
+   ],
+   "real_short_faint": [
+    0.0037,
+    0.0064
+   ],
+   "real_short_bright": [
+    0.4427,
+    0.0247
+   ],
+   "real_long_single": [
+    0.2965,
+    0.0121
+   ],
+   "real_long_deep": [
+    0.2579,
+    0.0246
+   ],
+   "neg1_injected": [
+    0.3157,
+    0.0079
+   ],
+   "neg1_real_short": [
+    0.2943,
+    0.0132
+   ],
+   "neg1_real_long": [
+    0.2648,
+    0.0125
+   ],
+   "neg1_eb_false_alarm": [
+    0.0331,
+    0.0019
+   ]
+  },
+  "tess_only": {
+   "stack_regime_inj": [
+    0.2582,
+    0.0177
+   ],
+   "single_transit_inj": [
+    0.3646,
+    0.0046
+   ],
+   "real_short_faint": [
+    0.0037,
+    0.0064
+   ],
+   "real_short_bright": [
+    0.4924,
+    0.0047
+   ],
+   "real_long_single": [
+    0.2945,
+    0.0115
+   ],
+   "real_long_deep": [
+    0.2656,
+    0.0125
+   ],
+   "neg1_injected": [
+    0.3355,
+    0.0043
+   ],
+   "neg1_real_short": [
+    0.3177,
+    0.0007
+   ],
+   "neg1_real_long": [
+    0.2543,
+    0.0092
+   ],
+   "neg1_eb_false_alarm": [
+    0.0402,
+    0.0008
+   ]
+  },
+  "transplant_only": {
+   "stack_regime_inj": [
+    0.3297,
+    0.0224
+   ],
+   "single_transit_inj": [
+    0.2159,
+    0.0155
+   ],
+   "real_short_faint": [
+    0.0148,
+    0.0064
+   ],
+   "real_short_bright": [
+    0.6294,
+    0.0127
+   ],
+   "real_long_single": [
+    0.2706,
+    0.0148
+   ],
+   "real_long_deep": [
+    0.1503,
+    0.0134
+   ],
+   "neg1_injected": [
+    0.2637,
+    0.0066
+   ],
+   "neg1_real_short": [
+    0.4073,
+    0.0097
+   ],
+   "neg1_real_long": [
+    0.2057,
+    0.0168
+   ],
+   "neg1_eb_false_alarm": [
+    0.0664,
+    0.0067
+   ]
+  },
+  "v1_rule": {
+   "stack_regime_inj": [
+    0.1434,
+    0.0191
+   ],
+   "single_transit_inj": [
+    0.345,
+    0.0079
+   ],
+   "real_short_faint": [
+    0.0037,
+    0.0064
+   ],
+   "real_short_bright": [
+    0.4709,
+    0.0307
+   ],
+   "real_long_single": [
+    0.3047,
+    0.008
+   ],
+   "real_long_deep": [
+    0.2561,
+    0.0037
+   ],
+   "neg1_injected": [
+    0.3116,
+    0.0037
+   ],
+   "neg1_real_short": [
+    0.3102,
+    0.0116
+   ],
+   "neg1_real_long": [
+    0.2654,
+    0.0162
+   ],
+   "neg1_eb_false_alarm": [
+    0.0361,
+    0.0008
+   ]
+  }
+ },
+ "sizes": {
+  "stack_regime_inj": 1269,
+  "single_transit_inj": 12137,
+  "real_short_faint": 90,
+  "real_short_bright": 1180,
+  "real_long_single": 1912,
+  "real_long_deep": 561
+ },
+ "runs": {
+  "baseline": 3,
+  "batman_only": 3,
+  "box_filter": 1,
+  "no_crop": 3,
+  "no_eb": 3,
+  "no_injected": 3,
+  "no_real": 3,
+  "rows_160k": 3,
+  "rows_20k": 3,
+  "rows_40k": 3,
+  "strong_injections": 3,
+  "tess_only": 3,
+  "transplant_only": 3,
+  "v1_rule": 3
+ }
+}

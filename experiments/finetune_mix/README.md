@@ -89,6 +89,8 @@ baseline when the difference exceeds two standard errors.
 | `train.py` | Trains one arm and seed, then scores it on lc-eval val |
 | `evaluate.py` | Thresholds, recall numbers, bins, average precision, box-filter baseline |
 | `aggregate.py` | Combines all runs into `summary.json`, `summary.md` and `runs.csv` |
+| `analyze.py` | Recomputes recall on question-specific subsets from every run's scores (`extra.json`) |
+| `results/wave1/` | Wave 1 results and findings (run 44000179513) |
 | `run_request.json` | Pushing a change to this file starts the workflow |
 
 ## How to run
@@ -98,6 +100,13 @@ edit `run_request.json` and push, or start "Fine-tuning data mix experiments" fr
 request can limit the arms (`"arms": ["baseline", "no_real"]`) or change the step count (`"steps": 2000`).
 The workflow needs the `HF_TOKEN` secret, because lc-eval is private. The results are in the run's
 `summary` artifact and in one `result-<arm>-s<seed>` artifact per run.
+
+## Results so far
+
+Wave 1 (2026-11-17): the v2 mix is the best-balanced of 13 arms, and its stacked-SNR rule helps faint
+short-period transits (20.3% against 14.3% recall). Real planets deeper than SNR 25 are mostly missed,
+because training injections stop near SNR 50 while EB negatives are deep. See
+[`results/wave1/README.md`](results/wave1/README.md).
 
 Locally:
 
@@ -128,3 +137,4 @@ Tests: `python -m pytest tests/test_finetune_mix.py -q`.
 | Date | Change |
 |---|---|
 | 2026-11-16 | First version: 13 arms × 3 seeds, 10,000 steps, lc-eval val |
+| 2026-11-17 | Wave 1 finished (run 44000179513); findings in `results/wave1/README.md`. Added `analyze.py` to the summary job |
