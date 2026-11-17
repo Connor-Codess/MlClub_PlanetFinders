@@ -69,6 +69,20 @@ class TestSelection:
             select_arm("x", {"rows": 1_000_000}, self.meta, self.order, SHARES)
 
 
+def test_read_meta_paths_are_relative_to_root(tmp_path):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    from experiments.finetune_mix.data import META_COLUMNS, read_meta
+    shard = tmp_path / "data" / "train"
+    shard.mkdir(parents=True)
+    columns = {c: [None] for c in META_COLUMNS}
+    columns["events"] = [[{"snr": 5.0, "is_planet": True, "visible": True}]]
+    pq.write_table(pa.table(columns), shard / "part-0.parquet")
+    meta = read_meta([(shard / "part-0.parquet").resolve()], tmp_path)
+    assert meta["path"].iloc[0] == "data/train/part-0.parquet"
+    assert meta["best_transit_snr"].iloc[0] == 5.0
+
+
 class TestLabels:
     def test_covered_neighbours_are_ignored(self):
         label = np.zeros((1, 162), np.uint8)

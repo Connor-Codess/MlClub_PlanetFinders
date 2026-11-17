@@ -47,7 +47,7 @@ def download(repo: str, split: str, out: Path, only: list[str] | None = None) ->
     patterns = only if only is not None else [f"data/{split}/*.parquet"]
     root = snapshot_download(repo_id=repo, repo_type="dataset", allow_patterns=patterns, local_dir=out,
                              max_workers=4, token=os.environ.get("HF_TOKEN"))
-    return sorted(Path(root).glob(f"data/{split}/*.parquet"))
+    return sorted(Path(out).glob(f"data/{split}/*.parquet")) if root else []
 
 
 def best_transit_snr(events) -> float:
@@ -62,7 +62,7 @@ def read_meta(files: list[Path], root: Path) -> pd.DataFrame:
         table = pq.read_table(f, columns=META_COLUMNS + ["events"])
         frame = table.drop(["events"]).to_pandas()
         frame["best_transit_snr"] = [best_transit_snr(ev) for ev in table.column("events").to_pylist()]
-        frame["path"] = str(f.relative_to(root))
+        frame["path"] = str(Path(f).resolve().relative_to(Path(root).resolve()))
         frame["row"] = np.arange(len(frame), dtype=np.int64)
         frames.append(frame)
     return pd.concat(frames, ignore_index=True)
