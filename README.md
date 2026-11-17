@@ -34,6 +34,8 @@ All light curves are on Hugging Face under [nyu-planet-finders](https://huggingf
 | [`.github/workflows/build-finetune-dataset.yml`](.github/workflows/build-finetune-dataset.yml) | Runs that build: plan, scan, choose, materialize, assemble |
 | [`dataset_cards/`](dataset_cards/) | Hand-written cards of the source datasets, published by `publish-dataset-cards.yml` |
 | [`docs/finetune_dataset_build_log.md`](docs/finetune_dataset_build_log.md) | Every decision, number and change of the fine-tuning build |
+| [`experiments/finetune_mix/`](experiments/finetune_mix/README.md) | Data mix experiments: which lc-finetune rows train the best detector, scored on lc-eval val |
+| [`.github/workflows/finetune-mix-experiments.yml`](.github/workflows/finetune-mix-experiments.yml) | Runs those experiments on GitHub's free CPU runners |
 | [`tests/`](tests) | Offline tests: `python -m pytest tests -q` |
 | `tessLightCurveData/`, `kplr001430207-2012179063303_llc.csv` | Early sample light curves |
 
@@ -57,3 +59,10 @@ checks are written to `index/validation_report.md` in lc-pretrain. See
 Edit [`finetune_dataset/build_request.json`](finetune_dataset/build_request.json) and push. `files` and `scale`
 make a trial; `reuse_run_id` reruns only the final assembly on an earlier run's rows. See
 [`finetune_dataset/README.md`](finetune_dataset/README.md) and the build log in `docs/`.
+
+## Running the data mix experiments
+
+Edit [`experiments/finetune_mix/run_request.json`](experiments/finetune_mix/run_request.json) and push, or run
+"Fine-tuning data mix experiments" from the Actions tab. Each arm (a combination of lc-finetune rows) trains
+the same small detector three times and is scored on lc-eval val; the run's `summary` artifact has the
+comparison. See [`experiments/finetune_mix/README.md`](experiments/finetune_mix/README.md).

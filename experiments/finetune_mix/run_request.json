@@ -1,0 +1,5 @@
+{
+  "note": "First wave: all 13 arms, 3 seeds each, 10,000 steps per run, scored on lc-eval val.",
+  "arms": null,
+  "steps": null
+}

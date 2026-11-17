@@ -1,0 +1,200 @@
+# Fine-tuning data mix experiments (experiments/finetune_mix).
+#
+#   select     picks each arm's lc-finetune train rows (offline tests first)
+#   pack-eval  packs lc-eval val and scores the box-filter baseline on it
+#   pack       one job per arm: packs the arm's rows into arrays
+#   train      one job per arm and seed: trains the small detector, scores it on lc-eval val
+#   aggregate  means, seed spread and differences from baseline for every arm
+#
+# Start it by editing experiments/finetune_mix/run_request.json and pushing, or from the Actions tab.
+# Requires the HF_TOKEN repository secret (read access to the private lc-eval).
+# Results: the "summary" artifact (summary.md, summary.json, runs.csv) and one "result-<arm>-s<seed>"
+# artifact per run.
+
+name: Fine-tuning data mix experiments
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, reference-catalogs]
+    paths:
+      - "experiments/finetune_mix/run_request.json"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: finetune-mix-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.11"
+  REQUEST: experiments/finetune_mix/run_request.json
+  SPARSE: |
+    experiments
+    tests
+
+jobs:
+  select:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      arms: ${{ steps.select.outputs.arms }}
+      jobs: ${{ steps.select.outputs.jobs }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: ${{ env.SPARSE }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: experiments/finetune_mix/requirements.txt
+      - run: pip install -r experiments/finetune_mix/requirements.txt pytest
+      - name: Offline tests
+        run: python -m pytest tests/test_finetune_mix.py -q
+      - id: select
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python -m experiments.finetune_mix.select --out build/mix/select --request "$REQUEST"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: select
+          path: build/mix/select
+          retention-days: 7
+
+  pack-eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: ${{ env.SPARSE }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: experiments/finetune_mix/requirements.txt
+      - run: pip install -r experiments/finetune_mix/requirements.txt
+      - name: Pack lc-eval val and score the box-filter baseline
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python -m experiments.finetune_mix.pack --eval --data build/mix/source --out build/mix/eval \
+            --box-filter-out build/mix/results/box_filter
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eval
+          path: build/mix/eval
+          compression-level: 0
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: result-box_filter
+          path: build/mix/results/box_filter
+          retention-days: 30
+
+  pack:
+    needs: select
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: ${{ fromJSON(needs.select.outputs.arms) }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: ${{ env.SPARSE }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: experiments/finetune_mix/requirements.txt
+      - run: pip install -r experiments/finetune_mix/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: select
+          path: build/mix/select
+      - name: Pack ${{ matrix.arm }}
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python -m experiments.finetune_mix.pack --arm "${{ matrix.arm }}" --selection build/mix/select \
+            --data build/mix/source --out build/mix/arm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arm-${{ matrix.arm }}
+          path: build/mix/arm
+          compression-level: 0
+          retention-days: 7
+
+  train:
+    needs: [select, pack, pack-eval]
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.select.outputs.jobs) }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: ${{ env.SPARSE }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: experiments/finetune_mix/requirements.txt
+      - run: |
+          pip install -r experiments/finetune_mix/requirements.txt
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: actions/download-artifact@v4
+        with:
+          name: arm-${{ matrix.arm }}
+          path: build/mix/arm
+      - uses: actions/download-artifact@v4
+        with:
+          name: eval
+          path: build/mix/eval
+      - name: Train ${{ matrix.arm }} seed ${{ matrix.seed }}
+        run: |
+          steps=$(python -c "import json; print(json.load(open('$REQUEST')).get('steps') or '')")
+          python -m experiments.finetune_mix.train --arm-data build/mix/arm --eval build/mix/eval \
+            --arm "${{ matrix.arm }}" --seed "${{ matrix.seed }}" --max-minutes 270 \
+            --out "build/mix/results/${{ matrix.arm }}-s${{ matrix.seed }}" ${steps:+--steps "$steps"}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: result-${{ matrix.arm }}-s${{ matrix.seed }}
+          path: build/mix/results/${{ matrix.arm }}-s${{ matrix.seed }}
+          retention-days: 30
+
+  aggregate:
+    needs: [train, pack-eval]
+    if: always() && needs.pack-eval.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: ${{ env.SPARSE }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: experiments/finetune_mix/requirements.txt
+      - run: pip install -r experiments/finetune_mix/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: result-*
+          path: build/mix/results
+      - name: Summarize
+        run: |
+          python -m experiments.finetune_mix.aggregate --results build/mix/results --out build/mix/summary
+          cat build/mix/summary/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: summary
+          path: build/mix/summary
+          retention-days: 90

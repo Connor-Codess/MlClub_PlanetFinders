@@ -23,6 +23,8 @@ light curves, then fine-tuned to output a transit probability per 4-hour patch.
 | `.github/workflows/build-pretrain-dataset.yml` | Runs Steps 1-11; triggered by pushing `pretrain_dataset/build_request.json` |
 | `finetune_dataset/` | Builds `lc-finetune` (public), `lc-eval` and `lc-benchmarks` (private); `config.py` holds every number |
 | `.github/workflows/build-finetune-dataset.yml` | Runs that build; triggered by pushing `finetune_dataset/build_request.json` |
+| `experiments/finetune_mix/` | Data mix experiments on lc-finetune, scored on lc-eval val; `config.py` holds every number |
+| `.github/workflows/finetune-mix-experiments.yml` | Runs them; triggered by pushing `experiments/finetune_mix/run_request.json` |
 | `dataset_cards/` | Cards of the source datasets; `publish-dataset-cards.yml` uploads them |
 | `tests/` | Offline tests (`python -m pytest tests -q`) |
 | `docs/` | Handoff notes and the build guide |
