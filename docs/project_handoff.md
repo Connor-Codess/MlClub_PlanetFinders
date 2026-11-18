@@ -58,8 +58,8 @@ Full plan with every decision and recommendation: [pretraining_dataset_build_gui
 | TESS_TCES | TOI list with 4 columns only | Superseded by reference-catalogs/toi_ephemerides |
 | lc-pretrain | Pretraining segments for train and validation stars, window index with weights, validation report | Built 2026-11-15 (v1) |
 | lc-heldout (private) | Same format for search_holdout, scoreboard_hosts and list_excluded stars, plus exclusions.parquet | Built 2026-11-15 (v1) |
-| lc-finetune | 27-day labeled windows, train 400,000 / validation 24,000: real short and long transits, batman and transplanted injections, random and EB negatives; benchmark stars excluded | Built 2026-11-16 (v2) |
-| lc-eval (private) | Labeled val (49,990) and test (49,885) windows from held-out stars only | Built 2026-11-16 (v2) |
+| lc-finetune | 27-day labeled windows, train 400,000 / validation 24,000: real short and long transits, batman and transplanted injections, random and EB negatives; benchmark stars excluded | Built 2026-11-18 (v3: deep tail, SNR correction, Claret limb darkening, eccentric orbits) |
+| lc-eval (private) | Labeled val (49,990) and test (49,885) windows from held-out stars only | v2 rows, unchanged by v3 (2026-11-18) |
 | lc-benchmarks (private) | AstroNet DR24, Astronet-Triage, Astronet-Triage-v2 test sets and Salinas et al. 2025 candidates on our light curves (16,499 windows) | Built 2026-11-16 (v2) |
 | reference-catalogs | TOI ephemerides (8,175), TESS EBs (4,584), Kepler EBs (2,876), Hawthorn duotransits (85), KIC-TIC crossmatch (207,617 KIC, 99.0% matched) | Built 2026-11-15 by `reference_catalogs/` via GitHub Actions; refreshed monthly |
 
