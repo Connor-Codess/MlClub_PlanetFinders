@@ -1,6 +1,6 @@
 # Fine-tuning, evaluation and benchmark dataset build log
 
-Nov 16, 2026. Repository copy of the live document at https://claude.ai/artifact/7h6fmA3BG5vne1v8yvHAek
+Nov 16, 2026, updated Nov 18 for v3. Repository copy of the live document at https://claude.ai/artifact/7h6fmA3BG5vne1v8yvHAek
 (the live copy also has a diagram of the build pipeline).
 
 ## Summary
@@ -10,7 +10,7 @@ Three labeled datasets are built from lc-pretrain and lc-heldout by `finetune_da
 - **One row = one 27-day window** (1,296 slots of 30 minutes) cut from an lc-pretrain or lc-heldout segment, with a label for each of its 162 four-hour patches. Channels and normalization are unchanged from pretraining.
 - **Transit sources:** real known planets (short and long period), batman model transits injected into stars with no catalog entry, and measured transit profiles of real planets transplanted into such stars. Negatives are random windows and eclipsing-binary or false-positive events.
 - **Leakage rules:** lc-eval uses held-out stars only. Every star of every benchmark test set is removed from lc-finetune.
-- **Status:** the full build (206 source files, 540,374 rows) passed all four checks, and all three datasets have been on Hugging Face since 2026-11-16. The rows were built at commit `e9a6eab` on branch `reference-catalogs`.
+- **Status:** the current build is v3 (2026-11-18), which changes only lc-finetune's batman injections; lc-eval and lc-benchmarks are the same rows as v2. v1 was built at commit `e9a6eab` and v2 at `9e1693c` on branch `reference-catalogs`. Every build has passed all four checks and holds 540,374 rows.
 
 Code: [finetune\_dataset](https://github.com/Connor-Codess/MlClub_PlanetFinders/tree/reference-catalogs/finetune_dataset). Workflow: `.github/workflows/build-finetune-dataset.yml`.
 
@@ -298,6 +298,38 @@ Real transits are now 16.0% of training rows (v1: 10.1%; the plan is 22.5%). lc-
 
 **Known offset.** Batman injections reach a median 0.83 of their target combined SNR (transplants 1.00): the depth solve ignores ingress, egress and the slot integration. The stored `inj_snr_total` is the achieved value, so recall curves binned on it are correct; only the drawn range sits about 17% lower than nominal (roughly 2.5-50 in lc-finetune). A one-step correction in `batman_injection` would remove it at the next rebuild.
 
+## v3: deep tail, SNR correction, star-matched limb darkening, eccentric orbits
+
+v3 changes only how batman injections are made, and only in lc-finetune (`config.INJ_PHYSICS = {"finetune": "v3", "eval": "v2"}`). lc-eval and lc-benchmarks keep the v2 physics, so fine-tuning experiments from before and after v3 are scored on identical windows. The changes come from wave 1 of the data-mix experiments (`experiments/finetune_mix/results/wave1/`): real planets above combined SNR 25 were found only 29% of the time, and no training injection was that deep, while eclipsing binaries are.
+
+| Rule | v2 | v3 | Why |
+| --- | --- | --- | --- |
+| Deep tail | Combined SNR 3-60 for every injection | 10% of batman rows draw from 60-300 (`inj_deep`); the draw has its own random stream, so a row's other draws are unchanged | Teach the model that deep, planet-shaped dips are planets, not only EBs |
+| SNR correction | Depth from a box-shaped estimate; achieved a median 0.83 of target | After the first batman model, the planet radius is scaled by sqrt(target / achieved), two rounds | Injections land on their target SNR |
+| Limb darkening | Kipping (2013) uniform draw over the physical range | Claret (2017) TESS-band quadratic coefficients at the host's Teff and log g (`inj_ld_source`) | Transit shape matches the host star |
+| Orbits | Circular | 30% eccentric: e from Beta(0.867, 3.03) (Kipping 2013), uniform argument of periastron, periastron beyond 2 stellar radii (`inj_ecc`, `inj_w_deg`) | Realistic spread of durations at a given period |
+
+The Claret table is VizieR J/A+A/600/A30, table25 (least-squares quadratic coefficients), cut to solar metallicity and 2 km/s microturbulence: 476 grid points, Teff 3,500-50,000 K, log g 0-5. A host gets the nearest grid point, with Teff scaled by 250 K and log g by 0.5 dex; log g comes from the radius and the mass-radius relation the injections already use. For a Sun-like star (5,800 K, log g 4.5) u1 = 0.31, u2 = 0.27. The table is committed at `finetune_dataset/data/ld_claret2017_tess.parquet` because the CDS hosts time out from GitHub's runners; `limb_darkening.py --fetch` rebuilds it from the Harvard VizieR mirror (`fetch-limb-darkening.yml`).
+
+`assemble.py` now writes two more entries to `summary.json`: `injection_physics` (achieved / target SNR, eccentric share and limb-darkening sources per dataset, model and deep flag) and `eval_fingerprint` (SHA-256 over lc-eval's sample ids, injected SNRs, periods and stacked SNRs), so a later build can show that lc-eval did not change.
+
+**Local trial (3 files, 1% scale).** 459 batman rows. Achieved / target combined SNR: median 1.000 (10th and 90th percentiles also 1.000). Deep tail: 43 rows (9.4%) at combined SNR 75 / 166 / 266; 9 of them hit the planet-size cap of 0.3 stellar radii on noisy stars and stop short of target. Eccentric: 32%. lc-eval rows built by the v3 code are byte-identical to v2's apart from the new, empty columns.
+
+**First full build, run 44270171416 (commit aeb9db8).** The fetch of the Claret table failed (CDS timeouts), so every v3 batman row fell back to the Kipping draw (`inj_ld_source = kipping2013`). Everything else came out as planned and all four gates passed:
+
+| Check | Result |
+| --- | --- |
+| Rows | 540,374, the same per category as v2 |
+| lc-finetune batman, main | 158,338 rows; achieved / target 1.000; 30.0% eccentric |
+| lc-finetune batman, deep tail | 17,624 rows (10.0% of batman); achieved / target 1.000; 29.9% eccentric |
+| lc-eval batman | 40,000 rows; achieved / target 0.834, circular, v2 limb darkening: unchanged |
+| Labels (median negative minus transit patch flux, sigma) | lc-finetune batman 2.79 (v2: 1.97, the deep tail and the correction); every lc-eval group identical to v2 (batman 1.36, transplant 0.70, real long 2.60, real short 1.51) |
+| lc-eval fingerprint | `80d955edc1cd257eae8a23a2d3a811aead9dded7dbaaa90b756673cf97b81ce5` |
+
+Kepler materialize jobs took 6.4 minutes on average (v2: 1.6) and two took 27 and 45 minutes. The injection code does not explain it (a v3 injection costs about 7 ms locally against 4 ms for v2, with no slow outliers in 3,000 draws); the likeliest cause is slow Hugging Face downloads while the pretraining jobs were reading from the same repos. The log does not time the download separately.
+
+**Second full build, run 44279662349 (commit 96d7eef).** Same code, with the table committed. Results are added here when it finishes.
+
 ## Build log
 
 The full build produced 540,374 rows and passed all four checks. It reached Hugging Face on the third assembly attempt, after two fixes to the upload path; the rows never changed.
@@ -355,6 +387,9 @@ Every change to the build, newest first. Times are UTC; commits are on branch `r
 
 | When (UTC) | Commit | Change | Why |
 | --- | --- | --- | --- |
+| 2026-11-18 09:50 | 96d7eef | Claret (2017) table committed in `finetune_dataset/data`; second v3 build started (run 44279662349) | The first v3 build could not reach VizieR and used the Kipping fallback for every batman row |
+| 2026-11-18 09:31-09:45 | 5de4196, a43b70c, 6d118c2, 656f69e | Limb-darkening fetch tries the CDS archive and four VizieR mirrors and queries table25 directly, with retries; keeps Claret's least-squares pair (aLSM, bLSM); `fetch-limb-darkening.yml` | CDS hosts time out from the runners and the unistra votable endpoint returns 404; the Harvard mirror works |
+| 2026-11-18 08:48 | aeb9db8 | v3: deep tail (10% of batman rows at combined SNR 60-300), two rounds of SNR correction, Claret limb darkening, 30% eccentric orbits, all for lc-finetune only; `injection_physics` and `eval_fingerprint` in summary.json; 3 new tests. Full build started (run 44270171416) | Wave 1: deep real planets were missed and batman injections reached only 0.83 of their target SNR |
 | 2026-11-16 16:59 | 9e1693c | v2: planets verified by stacked SNR >= 7 over the star; real windows selected by stacked in-window SNR >= 4; 30 real windows per star; injections targeted on combined SNR; crops keep a transit of SNR >= 4; stacked\_snr and n\_visible\_transits columns; gates rewritten; 4 new tests (69 pass). Full build started | Review: the per-transit SNR >= 4 cut dropped faint short-period planets found by stacking, and the model should still detect those |
 | 2026-11-16 07:45 | 0d3792a | lc-benchmarks usage example opens a data shard and shows the join to benchmark\_targets.parquet; assembly rerun on the same rows | The published example decoded a row of the signal table, which has no light-curve channels (found while checking the published card) |
 | 2026-11-16 07:20 | c98f621 | A reused run's row artifacts are fetched one at a time with retries (gh api), not by download-artifact in parallel. README, CLAUDE.md and handoff notes updated | The first assembly-only rerun (run 43817596888) hit GitHub's secondary API rate limit fetching 206 artifacts of another run at once |
@@ -380,4 +415,4 @@ Every change to the build, newest first. Times are UTC; commits are on branch `r
 - [ ] **ExoMiner (Valizadegan et al. 2022, Kepler DR25).** Not included: it uses DR25 labels and a by-star split whose lists were not found yet.
 - [ ] **Masking for pretraining.** Add the random patch-masking function to `pretrain_dataset/loader.py` (planned 30-40% of patches, some contiguous blocks; loss only on observed hidden slots).
 - [ ] **Mix ablations.** Rank the share of short-period real transits (for example 0%, 20%, 40% of real positives) and the single-transit crop share on the lc-eval injection-recovery curve, not on fine-tuning loss.
-- [ ] Batman depth solve: one correction step so the achieved combined SNR matches its target (now a median 0.83); apply at the next rebuild
+- [x] Batman depth solve: corrected in v3 (achieved / target 1.000 in lc-finetune); lc-eval keeps the v2 offset on purpose, see the v3 section

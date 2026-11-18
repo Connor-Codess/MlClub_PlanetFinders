@@ -27,6 +27,17 @@ lc-finetune mix: 15% real short, 7.5% real long, 35% batman, 15% transplant, 17.
 10% EB negatives; 400,000 train and 24,000 validation rows. Any category that cannot fill its share is
 topped up with batman injections. Every number is in `config.py`.
 
+## Versions
+
+The build version is stored in every row and in each dataset's `summary.json`. The full history and the
+checks of each build are in `docs/finetune_dataset_build_log.md`.
+
+| Version | Date | Change |
+|---|---|---|
+| v1 | 2026-11-16 | First build |
+| v2 | 2026-11-16 | Real windows selected by stacked in-window SNR; injections targeted on combined SNR |
+| v3 | 2026-11-18 | lc-finetune batman injections only: 10% deep tail (combined SNR 60-300), SNR correction, Claret (2017) limb darkening by host Teff and log g, 30% eccentric orbits. lc-eval and lc-benchmarks keep v2 physics (`config.INJ_PHYSICS`) |
+
 ## Published benchmarks
 
 `benchmarks.py` rebuilds the test sets of AstroNet (Shallue & Vanderburg 2018, Kepler DR24), Astronet-Triage
@@ -41,6 +52,8 @@ lc-finetune. The lc-benchmarks card explains how to score our model on them.
 | `config.py` | all | Sizes, mix, caps, injection distributions, label codes |
 | `pools.py` | all | Star pools (which dataset a star may feed) and known-event classes |
 | `injection.py` | 3 | Window cutting, batman and transplant injection, event measurement, patch labels |
+| `limb_darkening.py` | 2 | Claret (2017) TESS quadratic limb-darkening table: fetch from VizieR and per-star lookup |
+| `data/ld_claret2017_tess.parquet` | 3 | Committed copy of that table, used when the fetch fails |
 | `templates.py` | 1, 2 | Transit cutouts and stacked templates for transplants |
 | `benchmarks.py` | 0 | Published test sets as target tables |
 | `plan_build.py` | 0 | Files to process and the pinned catalog revision |
