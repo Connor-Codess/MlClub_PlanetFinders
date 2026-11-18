@@ -134,10 +134,15 @@ def main() -> None:
     (args.out / "quotas.json").write_text(json.dumps({"base_shares": shares, "arms": quotas}, indent=2))
     (args.out / "arms.json").write_text(json.dumps(arms))
     if "GITHUB_OUTPUT" in os.environ:
-        jobs = [{"arm": a, "seed": s} for a in arms for s in config.SEEDS]
+        specs = {**config.WAVE1_ARMS, **config.WAVE2_ARMS}
+        scratch = [{"arm": a, "seed": s} for a in arms if not specs[a].get("init") for s in config.SEEDS]
+        pretrained = [{"arm": a, "seed": s} for a in arms if specs[a].get("init") for s in config.SEEDS]
         with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
             fh.write(f"arms={json.dumps(arms)}\n")
-            fh.write(f"jobs={json.dumps(jobs)}\n")
+            fh.write(f"jobs_scratch={json.dumps(scratch)}\n")
+            fh.write(f"jobs_pretrained={json.dumps(pretrained)}\n")
+            fh.write(f"has_scratch={'true' if scratch else 'false'}\n")
+            fh.write(f"has_pretrained={'true' if pretrained else 'false'}\n")
 
 
 if __name__ == "__main__":

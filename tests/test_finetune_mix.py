@@ -42,6 +42,31 @@ class TestQuotas:
         assert q["injected_batman"] > base["injected_batman"]
 
 
+class TestWave2:
+    def test_real_share_sets_real_rows(self):
+        for share in config.WAVE2_REAL_SHARES:
+            q = arm_quotas({"real_share": share, "rows": 100_000}, SHARES)
+            real = q["real_planet_short"] + q["real_planet_long"]
+            assert real == pytest.approx(share * 100_000, abs=2)
+            assert sum(q.values()) == 100_000
+
+    def test_twenty_six_arms_with_known_inits(self):
+        assert len(config.WAVE2_ARMS) == 26
+        assert config.REFERENCE_ARM in config.WAVE2_ARMS
+        assert {s.get("init") for s in config.WAVE2_ARMS.values()} == {None, "pt_mix", "pt_ffi", "pt_tess"}
+
+    def test_tess_hosts_keep_kepler_real_planets(self):
+        meta = fake_meta()
+        meta["inj_deep"] = False
+        rng = np.random.default_rng(3)
+        order = {c: rng.permutation(np.flatnonzero(meta["category"].to_numpy() == c)) for c in config.CATEGORIES}
+        spec = {**config.WAVE2_ARMS["pt_mix-r16-nodeep-tess"], "rows": 1000}
+        chosen = meta.set_index("sample_id").loc[select_arm("x", spec, meta, order, SHARES)["sample_id"]]
+        hosts = chosen[chosen["category"].isin([*config.INJECTED, "negative_random"])]
+        assert set(hosts["source"]) <= set(config.TESS_SOURCES)
+        assert "kepler" in set(chosen[chosen["category"].isin(config.REAL)]["source"])
+
+
 class TestSelection:
     def setup_method(self):
         self.meta = fake_meta()

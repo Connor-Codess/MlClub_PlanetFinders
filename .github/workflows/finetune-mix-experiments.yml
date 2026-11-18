@@ -1,11 +1,15 @@
 # Fine-tuning data mix experiments (experiments/finetune_mix).
 #
-#   select     picks each arm's lc-finetune train rows (offline tests first)
-#   pack-eval  packs lc-eval val and scores the box-filter baseline on it
-#   pack       one job per arm: packs the arm's rows into arrays
-#   train      one job per arm and seed: trains the small detector, scores it on lc-eval val
-#   aggregate  means, seed spread and differences from baseline for every arm, plus the subset
-#              analysis of analyze.py
+#   select            picks each arm's lc-finetune train rows (offline tests first)
+#   pack-eval         packs lc-eval val (with events for the hiding test), scores the box filter
+#   pack              one job per arm: packs the arm's rows into arrays
+#   classical         ten slices of lc-eval val through wotan + box search + BLS; classical-score
+#                     merges and scores them
+#   realism           batman injections against real transits (distributions, classifier)
+#   train-scratch     one job per arm and seed for arms trained from scratch
+#   wait-pretrain     waits for the proxy pretraining run named in run_request.json
+#   train-pretrained  one job per arm and seed for arms that start from a pretrained encoder
+#   aggregate         means, seed spread and differences from the reference arm, plus analyze.py
 #
 # Start it by editing experiments/finetune_mix/run_request.json and pushing, or from the Actions tab.
 # Requires the HF_TOKEN repository secret (read access to the private lc-eval).
@@ -42,7 +46,11 @@ jobs:
     timeout-minutes: 60
     outputs:
       arms: ${{ steps.select.outputs.arms }}
-      jobs: ${{ steps.select.outputs.jobs }}
+      jobs_scratch: ${{ steps.select.outputs.jobs_scratch }}
+      jobs_pretrained: ${{ steps.select.outputs.jobs_pretrained }}
+      has_scratch: ${{ steps.select.outputs.has_scratch }}
+      has_pretrained: ${{ steps.select.outputs.has_pretrained }}
+      pretrain_run_id: ${{ steps.request.outputs.pretrain_run_id }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -55,6 +63,8 @@ jobs:
       - run: pip install -r experiments/finetune_mix/requirements.txt pytest
       - name: Offline tests
         run: python -m pytest tests/test_finetune_mix.py -q
+      - id: request
+        run: echo "pretrain_run_id=$(python -c "import json; print(json.load(open('$REQUEST')).get('pretrain_run_id') or '')")" >> "$GITHUB_OUTPUT"
       - id: select
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -136,14 +146,15 @@ jobs:
           compression-level: 0
           retention-days: 7
 
-  train:
+  train-scratch:
     needs: [select, pack, pack-eval]
+    if: needs.select.outputs.has_scratch == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 330
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(needs.select.outputs.jobs) }}
+        include: ${{ fromJSON(needs.select.outputs.jobs_scratch) }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -176,8 +187,161 @@ jobs:
           path: build/mix/results/${{ matrix.arm }}-s${{ matrix.seed }}
           retention-days: 30
 
+  train-pretrained:
+    needs: [select, pack, pack-eval, wait-pretrain]
+    if: needs.select.outputs.has_pretrained == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.select.outputs.jobs_pretrained) }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: ${{ env.SPARSE }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: experiments/finetune_mix/requirements.txt
+      - run: |
+          pip install -r experiments/finetune_mix/requirements.txt
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: actions/download-artifact@v4
+        with:
+          name: arm-${{ matrix.arm }}
+          path: build/mix/arm
+      - uses: actions/download-artifact@v4
+        with:
+          name: eval
+          path: build/mix/eval
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pretrained-*
+          path: build/pretrain
+          merge-multiple: true
+          run-id: ${{ needs.select.outputs.pretrain_run_id }}
+          github-token: ${{ github.token }}
+      - name: Train ${{ matrix.arm }} seed ${{ matrix.seed }}
+        run: |
+          steps=$(python -c "import json; print(json.load(open('$REQUEST')).get('steps') or '')")
+          python -m experiments.finetune_mix.train --arm-data build/mix/arm --eval build/mix/eval \
+            --arm "${{ matrix.arm }}" --seed "${{ matrix.seed }}" --max-minutes 270 --pretrained build/pretrain \
+            --out "build/mix/results/${{ matrix.arm }}-s${{ matrix.seed }}" ${steps:+--steps "$steps"}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: result-${{ matrix.arm }}-s${{ matrix.seed }}
+          path: build/mix/results/${{ matrix.arm }}-s${{ matrix.seed }}
+          retention-days: 30
+
+  classical:
+    needs: pack-eval
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        chunk: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: ${{ env.SPARSE }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: experiments/finetune_mix/requirements.txt
+      - run: pip install -r experiments/finetune_mix/requirements.txt wotan astropy
+      - uses: actions/download-artifact@v4
+        with:
+          name: eval
+          path: build/mix/eval
+      - run: python -m experiments.finetune_mix.classical --eval build/mix/eval --chunk "${{ matrix.chunk }}/10" --out build/mix/classical
+      - uses: actions/upload-artifact@v4
+        with:
+          name: classical-chunk-${{ matrix.chunk }}
+          path: build/mix/classical
+          retention-days: 7
+
+  classical-score:
+    needs: classical
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: ${{ env.SPARSE }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: experiments/finetune_mix/requirements.txt
+      - run: pip install -r experiments/finetune_mix/requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: eval
+          path: build/mix/eval
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: classical-chunk-*
+          path: build/mix/classical
+          merge-multiple: true
+      - run: |
+          python -m experiments.finetune_mix.classical --eval build/mix/eval --merge --out build/mix/classical \
+            --result build/mix/results/classical
+      - uses: actions/upload-artifact@v4
+        with:
+          name: result-classical
+          path: build/mix/results/classical
+          retention-days: 30
+
+  realism:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: ${{ env.SPARSE }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: experiments/finetune_mix/requirements.txt
+      - run: pip install -r experiments/finetune_mix/requirements.txt scikit-learn
+      - env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python -m experiments.finetune_mix.realism --data build/mix/source --out build/mix/realism
+      - uses: actions/upload-artifact@v4
+        with:
+          name: realism
+          path: build/mix/realism
+          retention-days: 90
+
+  wait-pretrain:
+    needs: select
+    if: needs.select.outputs.has_pretrained == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Wait for proxy pretraining run ${{ needs.select.outputs.pretrain_run_id }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ needs.select.outputs.pretrain_run_id }}
+        run: |
+          if [ -z "$RUN_ID" ]; then echo "run_request.json has no pretrain_run_id"; exit 1; fi
+          while true; do
+            state=$(gh api "repos/${{ github.repository }}/actions/runs/$RUN_ID" --jq '.status + " " + (.conclusion // "")')
+            echo "$(date -u +%H:%M) pretraining run: $state"
+            case "$state" in
+              "completed success") exit 0 ;;
+              completed*) echo "pretraining did not succeed"; exit 1 ;;
+            esac
+            sleep 300
+          done
+
   aggregate:
-    needs: [train, pack-eval]
+    needs: [train-scratch, train-pretrained, pack-eval, classical-score, realism]
     if: always() && needs.pack-eval.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -199,6 +363,11 @@ jobs:
         with:
           name: eval-meta
           path: build/mix/eval
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: realism
+          path: build/mix/summary
       - name: Summarize
         run: |
           python -m experiments.finetune_mix.aggregate --results build/mix/results --out build/mix/summary

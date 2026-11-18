@@ -14,6 +14,11 @@ What it does
     neg1_*                    recall and EB false alarms with the threshold set so that 1% of
                               random and EB windows together raise an alarm (a matched comparison
                               for arms that fire more on EBs)
+    batman_matched_to_real_long  recall of single-transit batman injections with P >= 20 d,
+                              weighted to the SNR distribution of the real long-period planets;
+                              next to real_long_single_for_matching it tests whether injections
+                              are as easy as real planets of the same SNR
+    hiding_test               mean over seeds of train.py's transit-hiding test, per arm
 
     Each value is the mean and standard deviation over an arm's seeds.
 
@@ -70,6 +75,23 @@ def run_values(scores: dict, meta: pd.DataFrame, masks: dict[str, np.ndarray]) -
         return float((on_target[mask] > t).mean()) if mask.any() else float("nan")
 
     out = {name: recall(mask, threshold) for name, mask in masks.items()}
+    # batman injections matched to real long-period planets: P >= 20 d, one visible transit, and
+    # recall per combined-SNR bin weighted by the real planets' stacked-SNR distribution
+    real_long = (cat == "real_planet_long") & has & (meta["n_visible_transits"].to_numpy() == 1)
+    bat = (cat == "injected_batman") & has & (meta["inj_period_d"].to_numpy() >= 20) \
+        & (meta["n_visible_transits"].to_numpy() == 1)
+    edges = np.array(config.COMBINED_SNR_BINS)
+    real_bins = np.digitize(meta["stacked_snr"].fillna(0).to_numpy()[real_long], edges) - 1
+    bat_bins = np.digitize(meta["inj_snr_total"].to_numpy()[bat], edges) - 1
+    found_bat = on_target[bat] > threshold
+    weights, recalls = [], []
+    for b in range(len(edges) - 1):
+        if (bat_bins == b).sum() >= 20:
+            weights.append((real_bins == b).sum())
+            recalls.append(found_bat[bat_bins == b].mean())
+    out["batman_matched_to_real_long"] = (float(np.average(recalls, weights=weights))
+                                          if weights and sum(weights) > 0 else float("nan"))
+    out["real_long_single_for_matching"] = recall(real_long, threshold)
     out.update({
         "neg1_injected": recall(np.isin(cat, config.INJECTED), matched),
         "neg1_real_short": recall(cat == "real_planet_short", matched),
@@ -87,10 +109,17 @@ def main() -> None:
     args = parser.parse_args()
     meta = pd.read_parquet(args.eval_meta)
     masks = subsets(meta)
-    rows = []
+    rows, hiding = [], []
     for path in sorted(args.results.glob("*/scores.npz")):
-        run = json.loads((path.parent / "metrics.json").read_text())["run"]
+        metrics = json.loads((path.parent / "metrics.json").read_text())
+        run = metrics["run"]
         rows.append({"arm": run["arm"], "seed": run["seed"], **run_values(np.load(path), meta, masks)})
+        test = metrics.get("hiding_test") or {}
+        if test.get("windows"):
+            hiding.append({"arm": run["arm"], "seed": run["seed"],
+                           "with_siblings": test["kept_found_with_siblings"], "alone": test["kept_found_alone"],
+                           "stack_with_siblings": test["stack_regime"]["kept_found_with_siblings"],
+                           "stack_alone": test["stack_regime"]["kept_found_alone"], "windows": test["windows"]})
     frame = pd.DataFrame(rows)
     columns = [c for c in frame.columns if c not in ("arm", "seed")]
     stats = frame.groupby("arm")[columns].agg(["mean", "std"])
@@ -100,6 +129,11 @@ def main() -> None:
     args.out.mkdir(parents=True, exist_ok=True)
     result = {"arms": arms, "sizes": {k: int(v.sum()) for k, v in masks.items()},
               "runs": frame.groupby("arm").size().to_dict()}
+    if hiding:
+        h = pd.DataFrame(hiding)
+        result["hiding_test"] = {arm: {c: round(float(g[c].mean()), 4) for c in
+                                       ("with_siblings", "alone", "stack_with_siblings", "stack_alone")}
+                                 | {"windows": int(g["windows"].iloc[0])} for arm, g in h.groupby("arm")}
     (args.out / "extra.json").write_text(json.dumps(result, indent=1))
     for arm, values in arms.items():
         print(arm.ljust(18), " ".join(f"{c}={v[0]:.3f}" for c, v in values.items()))
