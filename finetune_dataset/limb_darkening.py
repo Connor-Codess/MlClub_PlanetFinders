@@ -36,6 +36,7 @@ import pandas as pd
 
 LOG = logging.getLogger("finetune.ld")
 CATALOG = "J/A+A/600/A30"
+QUADRATIC_ATLAS_TABLE = f"{CATALOG}/table25"   # "a, b quadratic LDCs, ATLAS models, ... for TESS"
 CDS_HOSTS = ("cdsarc.cds.unistra.fr", "cdsarc.u-strasbg.fr")
 VIZIER_MIRRORS = ("vizier.cds.unistra.fr", "vizier.cfa.harvard.edu", "vizier.iucaa.in", "vizieridia.saao.ac.za")
 SOLAR_Z = 0.0
@@ -109,6 +110,25 @@ def _with_meta(table, text: str):
     return table
 
 
+def _from_table25(server: str) -> pd.DataFrame | None:
+    """Query Claret's quadratic ATLAS table directly (solar metallicity, xi = 2 km/s), with retries."""
+    import time
+
+    from astroquery.vizier import Vizier
+
+    for attempt in range(3):
+        vizier = Vizier(columns=["logg", "Teff", "Z", "xi", "aLSM", "bLSM"], row_limit=-1)
+        vizier.VIZIER_SERVER = server
+        tables = vizier.get_catalogs(QUADRATIC_ATLAS_TABLE)
+        if len(tables):
+            frame = tables[0].to_pandas()
+            LOG.info("%s from %s: %d rows", QUADRATIC_ATLAS_TABLE, server, len(frame))
+            return frame.rename(columns={"Teff": "teff", "Z": "z", "aLSM": "u1", "bLSM": "u2"})
+        LOG.info("%s returned no table (attempt %d)", server, attempt + 1)
+        time.sleep(10)
+    return None
+
+
 def _from_astroquery(server: str) -> pd.DataFrame | None:
     from astroquery.vizier import Vizier
 
@@ -119,7 +139,8 @@ def _from_astroquery(server: str) -> pd.DataFrame | None:
 
 def fetch(out: Path) -> bool:
     frame = None
-    sources = [(f"CDS archive files at {h}", lambda h=h: _from_cds_ftp(out.parent / "ld_cds", h)) for h in CDS_HOSTS]
+    sources = [(f"{QUADRATIC_ATLAS_TABLE} at {m}", lambda m=m: _from_table25(m)) for m in VIZIER_MIRRORS]
+    sources += [(f"CDS archive files at {h}", lambda h=h: _from_cds_ftp(out.parent / "ld_cds", h)) for h in CDS_HOSTS]
     sources += [(f"astroquery VizieR at {m}", lambda m=m: _from_astroquery(m)) for m in VIZIER_MIRRORS]
     for name, method in sources:
         try:
