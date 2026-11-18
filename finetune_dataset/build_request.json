@@ -1,5 +1,5 @@
 {
-  "note": "v3 full build: deep-injection tail (10% of batman rows at combined SNR 60-300), SNR correction, Claret 2017 limb darkening and 30% eccentric orbits, all for lc-finetune only; lc-eval and lc-benchmarks keep the v2 physics and should come out identical.",
+  "note": "v3 full build, second pass: same physics as the first v3 build (deep-injection tail, SNR correction, 30% eccentric orbits) but with the Claret 2017 TESS limb-darkening table committed in finetune_dataset/data, since the first pass could not reach VizieR and fell back to Kipping 2013 coefficients. lc-eval and lc-benchmarks keep the v2 physics and should come out identical.",
   "sources": [
     "ffi",
     "2min",
