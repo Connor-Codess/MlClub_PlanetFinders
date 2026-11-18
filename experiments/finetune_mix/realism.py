@@ -6,12 +6,14 @@ What it does
        toi_ephemerides: PC, CP and KP). Reports quantiles and the share of injections whose
        duration falls outside the TOIs' 1st-99th percentile range for the same period bin.
     2. Classifier. Cuts single transits out of lc-finetune train windows: real planets, batman
-       injections and transplants, each with per-transit SNR 7-40. Samples are matched in SNR
-       and duration bins, so neither can give a class away. A gradient-boosted classifier then
+       injections and transplants, each with per-transit SNR 7-40. Samples are matched by source
+       (FFI, 2-min, Kepler) and in SNR and duration bins, so none of these can give a class away. A gradient-boosted classifier then
        tries to tell real from batman (and, as a control, real from transplant) with 5-fold
        cross-validation:
-           shape      the transit resampled to 40 bins over -2 to +2 durations, divided by its
-                      depth, so only the shape is left
+           shape      the transit averaged in 40 bins over -2 to +2 durations, empty bins filled
+                      by linear interpolation from their neighbours, divided by its depth, so only
+                      the shape is left (leaving empty bins at zero let the classifier read the
+                      bin occupancy, which depends on duration and phase, not on the transit)
            raw        the flux_z cutout of +-16 hours in noise units, as the detector sees it
        ROC AUC near 0.5 means the classifier cannot tell them apart.
        Diagnostics, to say what a high AUC comes from:
@@ -98,20 +100,9 @@ def cutouts(table: pd.DataFrame) -> pd.DataFrame:
             if lo < 0 or hi > config.WINDOW_SLOTS or observed[lo:hi].mean() < 0.9:
                 continue
             raw = np.where(observed[lo:hi], np.clip(flux[lo:hi], -config.INPUT_CLIP, config.INPUT_CLIP), 0.0)
-            phase = (slots - c) / d
-            near = (np.abs(phase) <= 2) & observed
-            if near.sum() < 8:
+            shape = _shape(flux, observed, slots, c, d)
+            if shape is None:
                 continue
-            edges = np.linspace(-2, 2, SHAPE_BINS + 1)
-            which = np.digitize(phase[near], edges) - 1
-            sums = np.bincount(which, weights=flux[near], minlength=SHAPE_BINS)[:SHAPE_BINS]
-            counts = np.bincount(which, minlength=SHAPE_BINS)[:SHAPE_BINS]
-            shape = np.where(counts > 0, sums / np.maximum(counts, 1), np.nan)
-            centre = shape[SHAPE_BINS // 2 - 3:SHAPE_BINS // 2 + 3]
-            depth = -np.nanmean(centre)
-            if not np.isfinite(depth) or depth <= 0:
-                continue
-            shape = np.nan_to_num(shape / depth, nan=0.0)
             recentred = _shape(flux, observed, slots, c + _offset(flux, observed, c, d), d)
             out.append({"category": row["category"], "source": row["source"], "snr": float(e["snr"]),
                         "duration_h": d * 0.5, "shape": shape, "raw": raw,
@@ -147,18 +138,22 @@ def _shape(flux: np.ndarray, observed: np.ndarray, slots: np.ndarray, c: float, 
     which = np.digitize(phase[near], edges) - 1
     sums = np.bincount(which, weights=flux[near], minlength=SHAPE_BINS)[:SHAPE_BINS]
     counts = np.bincount(which, minlength=SHAPE_BINS)[:SHAPE_BINS]
-    shape = np.where(counts > 0, sums / np.maximum(counts, 1), np.nan)
-    depth = -np.nanmean(shape[SHAPE_BINS // 2 - 3:SHAPE_BINS // 2 + 3])
+    filled = counts > 0
+    if filled.sum() < SHAPE_BINS // 4:
+        return None
+    centres = (edges[:-1] + edges[1:]) / 2
+    shape = np.interp(centres, centres[filled], sums[filled] / counts[filled])
+    depth = -shape[SHAPE_BINS // 2 - 3:SHAPE_BINS // 2 + 3].mean()
     if not np.isfinite(depth) or depth <= 0:
         return None
-    return np.nan_to_num(shape / depth, nan=0.0)
+    return shape / depth
 
 
 def matched(cut: pd.DataFrame, a: str, b: str, rng: np.random.Generator) -> pd.DataFrame:
-    """Equal numbers of a and b in every (SNR bin, duration bin) cell."""
+    """Equal numbers of a and b in every (source, SNR bin, duration bin) cell."""
     cut = cut.assign(snr_bin=np.digitize(cut["snr"], SNR_BINS), dur_bin=np.digitize(cut["duration_h"], DURATION_BINS_H))
     picks = []
-    for _, cell in cut[cut["category"].isin([a, b])].groupby(["snr_bin", "dur_bin"]):
+    for _, cell in cut[cut["category"].isin([a, b])].groupby(["source", "snr_bin", "dur_bin"]):
         ga, gb = cell[cell["category"] == a], cell[cell["category"] == b]
         k = min(len(ga), len(gb))
         if k:
