@@ -25,6 +25,8 @@ light curves, then fine-tuned to output a transit probability per 4-hour patch.
 | `.github/workflows/build-finetune-dataset.yml` | Runs that build; triggered by pushing `finetune_dataset/build_request.json` |
 | `experiments/finetune_mix/` | Data mix experiments on lc-finetune, scored on lc-eval val; `config.py` holds every number |
 | `.github/workflows/finetune-mix-experiments.yml` | Runs them; triggered by pushing `experiments/finetune_mix/run_request.json` |
+| `.github/workflows/benchmark-eval.yml` | Scores one finished arm on lc-benchmarks; triggered by pushing `experiments/finetune_mix/benchmark_request.json` |
+| `.github/workflows/realism-check.yml`, `fetch-limb-darkening.yml` | Realism checks on the published lc-finetune; refetch of the Claret limb-darkening table |
 | `experiments/proxy_pretrain/` | Masked-reconstruction pretraining of the small experiment model on lc-pretrain |
 | `.github/workflows/proxy-pretrain.yml` | Runs it; triggered by pushing `experiments/proxy_pretrain/run_request.json` |
 | `dataset_cards/` | Cards of the source datasets; `publish-dataset-cards.yml` uploads them |

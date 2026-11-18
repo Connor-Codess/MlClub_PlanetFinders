@@ -328,7 +328,16 @@ The Claret table is VizieR J/A+A/600/A30, table25 (least-squares quadratic coeff
 
 Kepler materialize jobs took 6.4 minutes on average (v2: 1.6) and two took 27 and 45 minutes. The injection code does not explain it (a v3 injection costs about 7 ms locally against 4 ms for v2, with no slow outliers in 3,000 draws); the likeliest cause is slow Hugging Face downloads while the pretraining jobs were reading from the same repos. The log does not time the download separately.
 
-**Second full build, run 44279662349 (commit 96d7eef).** Same code, with the table committed. Results are added here when it finishes.
+**Second full build, run 44279662349 (commit 96d7eef), the published v3.** Same code, with the table committed; the fetch step in the choose job also reached the Harvard mirror this time. Published 2026-11-18 11:41 UTC; all four gates passed.
+
+| Check | Result |
+| --- | --- |
+| Limb darkening | `claret2017` for all 175,962 lc-finetune batman rows |
+| lc-finetune batman, main / deep tail | 158,338 / 17,624 rows (10.0%); achieved / target 1.000 for both; 30.1% / 29.5% eccentric |
+| lc-finetune batman combined SNR | 3.70 / 13.28 / 54.81 (10th / 50th / 90th percentiles) |
+| Labels | lc-finetune batman 2.76 sigma; lc-eval groups identical to v2 |
+| Injection gate | measured stacked / expected combined SNR 0.945; expected / target 1.000; 289,233 rows |
+| lc-eval fingerprint | `80d955ed...b81ce5`, the same as the first v3 build, and lc-eval's per-category counts, label medians and achieved / target (0.834) equal v2's |
 
 ## Build log
 

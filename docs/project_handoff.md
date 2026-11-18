@@ -1,4 +1,4 @@
-# Exoplanet ML pipeline: status and handoff (updated 2026-11-17)
+# Exoplanet ML pipeline: status and handoff (updated 2026-11-18)
 
 Read this first when picking up the planet-finding project. The same notes are kept in the team's
 Claude project "Ml Club Space".
@@ -100,8 +100,30 @@ lightkurve's default quality bitmask (17087) and only requires finite time and f
    scored on lc-eval val. The v2 mix is the best-balanced; its stacked-SNR rule raises recall on faint
    short-period transits from 14.3% to 20.3%. Real planets deeper than SNR 25 are mostly missed (28.7% of
    long-period ones), because training injections stop near SNR 50 while EB negatives are deep.
-   Next: add deep injections (combined SNR 60-300) and TESS-only injection hosts, then test them in a second
-   wave. Findings: `experiments/finetune_mix/results/wave1/README.md`.
-7. Faculty sponsor and Torch access.
-8. Detector training on lc-finetune; injection-recovery curves on lc-eval; scores on lc-benchmarks.
-9. Duotransit matching, vetting, CTOI submission.
+   Findings: `experiments/finetune_mix/results/wave1/README.md`.
+7. Done 2026-11-18: lc-finetune v3 (run 44279662349). Batman injections in lc-finetune only: 10% deep tail
+   (combined SNR 60-300), a radius correction so injections reach their target SNR (achieved / target 1.000),
+   Claret (2017) TESS limb darkening by host Teff and log g (table committed in `finetune_dataset/data/`,
+   since VizieR's CDS hosts time out from the runners) and 30% eccentric orbits. lc-eval and lc-benchmarks
+   keep v2 physics; `summary.json` now carries an `eval_fingerprint`, unchanged between builds.
+8. Done 2026-11-18: proxy pretraining (`experiments/proxy_pretrain/`, run 44271393676) of the 0.35M model on
+   three lc-pretrain mixes (`pt_mix` 50/25/25 FFI/2-min/Kepler, `pt_ffi`, `pt_tess`), 400k windows, 12,000
+   steps, about 3 CPU hours each; hidden flux predicted 37-39% better than the median.
+9. Done 2026-11-18: data mix wave 2 (run 44297108133), 26 arms x 3 seeds. Pre-registered winner
+   `pt_mix-r00-deep-all`: pretrained on `pt_mix`, no real planets in fine-tuning, deep tail, all hosts. Against
+   the v2 mix, pretrained: faint recall 21.7% against 17.9%, faint repeated short-period transits 32.9% against
+   21.1%, real long-period recall unchanged (38.1%), real short-period about 6 points lower. Pretraining adds
+   3.5 points of real long-period recall and 9 on deep ones; the deep tail lifts deep real long-period planets
+   from 48.4% to 56.9% (wave 1: 28.7%). Kepler hosts help; Kepler noise degradation does not. Realism checks:
+   batman shapes and durations match real planets once real transits are measured at fitted times; the
+   remaining gap (injections 52% against real 39% at matched SNR) most likely comes from catalog-ephemeris
+   labels on real planets. Classical wotan + BLS finds 0.4% of injections at 1% false alarms.
+   On lc-benchmarks (run 44392254586) the winner detects 85% of Salinas et al. 2025's single-transit candidates
+   and reaches AUC 0.93 for DR24 planet candidates against non-transiting signals (0.86 against all false
+   positives; AstroNet: 0.988); it is a detector, not a vetter. Findings:
+   `experiments/finetune_mix/results/wave2/README.md`; paper: https://claude.ai/artifact/56sFibKwzFLu1Zezqpd3Sy.
+   Next: lc-finetune v4 (impact parameters up to 1, flux median recomputed after injection, real-planet labels
+   from fitted transit times), full-size pretraining on `pt_mix`, a vetting stage, one look at lc-eval test.
+10. Faculty sponsor and Torch access.
+11. Detector training on lc-finetune at full size; injection-recovery curves on lc-eval; scores on lc-benchmarks.
+12. Duotransit matching, vetting, CTOI submission.
