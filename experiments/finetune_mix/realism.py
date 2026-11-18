@@ -14,6 +14,14 @@ What it does
                       depth, so only the shape is left
            raw        the flux_z cutout of +-16 hours in noise units, as the detector sees it
        ROC AUC near 0.5 means the classifier cannot tell them apart.
+       Diagnostics, to say what a high AUC comes from:
+           recentred  the shape, after moving the centre to the deepest point within half a
+                      duration (box filter of the transit's width); real transits are cut at the
+                      catalog ephemeris, which can be off by an hour or more, injections are not
+           wings      only the shape bins outside 1.2 durations: tells the hosts' noise apart,
+                      not the transit
+           by source  real against batman within TESS rows and within Kepler rows separately
+           mean shapes  the average shape of each class in the matched sample, for plots
     3. Matched recall is computed by analyze.py from the training runs (real long-period
        planets against batman injections matched in SNR, period and transit count).
 
@@ -101,9 +109,46 @@ def cutouts(table: pd.DataFrame) -> pd.DataFrame:
             if not np.isfinite(depth) or depth <= 0:
                 continue
             shape = np.nan_to_num(shape / depth, nan=0.0)
-            out.append({"category": row["category"], "snr": float(e["snr"]),
-                        "duration_h": d * 0.5, "shape": shape, "raw": raw})
+            recentred = _shape(flux, observed, slots, c + _offset(flux, observed, c, d), d)
+            out.append({"category": row["category"], "source": row["source"], "snr": float(e["snr"]),
+                        "duration_h": d * 0.5, "shape": shape, "raw": raw,
+                        "recentred": recentred if recentred is not None else shape})
     return pd.DataFrame(out)
+
+
+def _offset(flux: np.ndarray, observed: np.ndarray, c: float, d: float) -> float:
+    """Shift in slots, within half a duration, that puts a box of the transit's width deepest."""
+    width = max(int(round(d)), 1)
+    reach = max(int(round(d / 2)), 1)
+    best, best_shift = np.inf, 0
+    for shift in range(-reach, reach + 1):
+        lo = int(round(c + shift - width / 2))
+        hi = lo + width
+        if lo < 0 or hi > len(flux):
+            continue
+        seg = observed[lo:hi]
+        if seg.sum() < max(1, width // 2):
+            continue
+        level = float(flux[lo:hi][seg].mean())
+        if level < best:
+            best, best_shift = level, shift
+    return float(best_shift)
+
+
+def _shape(flux: np.ndarray, observed: np.ndarray, slots: np.ndarray, c: float, d: float) -> np.ndarray | None:
+    phase = (slots - c) / d
+    near = (np.abs(phase) <= 2) & observed
+    if near.sum() < 8:
+        return None
+    edges = np.linspace(-2, 2, SHAPE_BINS + 1)
+    which = np.digitize(phase[near], edges) - 1
+    sums = np.bincount(which, weights=flux[near], minlength=SHAPE_BINS)[:SHAPE_BINS]
+    counts = np.bincount(which, minlength=SHAPE_BINS)[:SHAPE_BINS]
+    shape = np.where(counts > 0, sums / np.maximum(counts, 1), np.nan)
+    depth = -np.nanmean(shape[SHAPE_BINS // 2 - 3:SHAPE_BINS // 2 + 3])
+    if not np.isfinite(depth) or depth <= 0:
+        return None
+    return np.nan_to_num(shape / depth, nan=0.0)
 
 
 def matched(cut: pd.DataFrame, a: str, b: str, rng: np.random.Generator) -> pd.DataFrame:
@@ -119,7 +164,7 @@ def matched(cut: pd.DataFrame, a: str, b: str, rng: np.random.Generator) -> pd.D
     return pd.concat(picks) if picks else cut.iloc[:0]
 
 
-def classify(cut: pd.DataFrame, a: str, b: str, rng: np.random.Generator) -> dict:
+def classify(cut: pd.DataFrame, a: str, b: str, rng: np.random.Generator, detail: bool = True) -> dict:
     from sklearn.ensemble import HistGradientBoostingClassifier
     from sklearn.model_selection import StratifiedKFold, cross_val_predict
     from sklearn.metrics import roc_auc_score
@@ -130,12 +175,30 @@ def classify(cut: pd.DataFrame, a: str, b: str, rng: np.random.Generator) -> dic
         result["note"] = "too few matched cutouts"
         return result
     y = (data["category"] == a).to_numpy().astype(int)
-    for name in ("shape", "raw"):
-        x = np.stack(data[name].to_numpy())
+    edges = np.linspace(-2, 2, SHAPE_BINS + 1)
+    centres = (edges[:-1] + edges[1:]) / 2
+    features = {"shape": np.stack(data["shape"].to_numpy()), "raw": np.stack(data["raw"].to_numpy()),
+                "recentred": np.stack(data["recentred"].to_numpy())}
+    features["wings"] = features["shape"][:, np.abs(centres) > 1.2]
+    if not detail:
+        features = {k: features[k] for k in ("shape", "raw")}
+    for name, x in features.items():
         folds = StratifiedKFold(5, shuffle=True, random_state=0)
         prob = cross_val_predict(HistGradientBoostingClassifier(max_iter=300, random_state=0), x, y, cv=folds,
                                  method="predict_proba")[:, 1]
         result[f"{name}_auc"] = round(float(roc_auc_score(y, prob)), 4)
+    if detail:
+        result["source_share"] = {c: data[data["category"] == c]["source"].value_counts(normalize=True).round(3).to_dict()
+                                  for c in (a, b)}
+        result["mean_shape"] = {c: np.stack(data[data["category"] == c]["shape"].to_numpy()).mean(axis=0).round(4).tolist()
+                                for c in (a, b)}
+        result["mean_recentred"] = {c: np.stack(data[data["category"] == c]["recentred"].to_numpy()).mean(axis=0)
+                                    .round(4).tolist() for c in (a, b)}
+        result["phase_bins"] = centres.round(3).tolist()
+        result["by_source"] = {}
+        for group, sources in (("tess", ("ffi", "2min")), ("kepler", ("kepler",))):
+            sub = cut[cut["source"].isin(sources)]
+            result["by_source"][group] = classify(sub, a, b, rng, detail=False)
     return result
 
 
@@ -159,7 +222,7 @@ def main() -> None:
     result = {"distributions": distributions(meta, tois)}
 
     rng = np.random.default_rng(0)
-    columns = ["category", "flux_z", "flags", "events"]
+    columns = ["category", "source", "flux_z", "flags", "events"]
     frames = [pq.read_table(f, columns=columns).to_pandas() for f in files[: args.shards]]
     table = pd.concat(frames, ignore_index=True)
     table = table[table["category"].isin(["real_planet_short", "real_planet_long", "injected_batman", "injected_transplant"])]

@@ -1,0 +1,42 @@
+# Runs the realism checks of experiments/finetune_mix/realism.py on the published lc-finetune on its
+# own, without a full experiment wave: duration and depth against TOIs, and a classifier that tries to
+# tell real transits from batman injections and transplants, with its diagnostics.
+#
+# Triggered by a push that changes realism.py, or by hand. Output: artifact "realism" (realism.json).
+
+name: Realism check
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [reference-catalogs]
+    paths:
+      - "experiments/finetune_mix/realism.py"
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  realism:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: |
+            experiments
+            tests
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: experiments/finetune_mix/requirements.txt
+      - run: pip install -r experiments/finetune_mix/requirements.txt scikit-learn
+      - env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python -m experiments.finetune_mix.realism --data build/mix/source --out build/mix/realism
+      - uses: actions/upload-artifact@v4
+        with:
+          name: realism
+          path: build/mix/realism
+          retention-days: 90

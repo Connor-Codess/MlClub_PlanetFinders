@@ -159,3 +159,33 @@ def test_model_shape():
     from experiments.finetune_mix.model import Detector
     out = Detector()(torch.zeros(2, len(config.INPUT_CHANNELS) + 1, config.WINDOW_SLOTS))
     assert out.shape == (2, config.N_PATCHES)
+
+
+def _transit_rows(category: str, n: int, offset: float, rng: np.random.Generator) -> list[dict]:
+    rows = []
+    slots = np.arange(config.WINDOW_SLOTS) + 0.5
+    for _ in range(n):
+        centre, duration, depth = float(rng.uniform(200, 1000)), 6.0, float(rng.uniform(1.5, 3.0))
+        true_centre = centre + offset
+        flux = rng.normal(0, 1, config.WINDOW_SLOTS)
+        flux[np.abs(slots - true_centre) < duration / 2] -= depth
+        rows.append({"category": category, "source": "ffi", "flux_z": flux.astype("<f2").tobytes(),
+                     "flags": np.ones(config.WINDOW_SLOTS, np.uint8).tobytes(),
+                     "events": [{"is_planet": True, "visible": True, "snr": 10.0, "center_slot": centre,
+                                 "duration_slots": duration}]})
+    return rows
+
+
+class TestRealism:
+    def test_recentring_removes_an_ephemeris_offset(self):
+        pytest.importorskip("sklearn")
+        from experiments.finetune_mix.realism import classify, cutouts
+
+        rng = np.random.default_rng(0)
+        table = pd.DataFrame(_transit_rows("real", 300, 2.0, rng) + _transit_rows("batman", 300, 0.0, rng))
+        result = classify(cutouts(table), "real", "batman", np.random.default_rng(1))
+        assert result["pairs"] >= 280
+        assert result["shape_auc"] > 0.8
+        assert result["recentred_auc"] < 0.65
+        assert result["wings_auc"] < 0.65
+        assert len(result["mean_shape"]["real"]) == 40
