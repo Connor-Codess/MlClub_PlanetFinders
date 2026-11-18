@@ -106,7 +106,33 @@ def _weighted_median(values: np.ndarray, weights: np.ndarray) -> float:
     return float(values[keep][order][np.searchsorted(cum, cum[-1] / 2)])
 
 
-def durations(meta: pd.DataFrame, tois: pd.DataFrame) -> list[dict]:
+KOI_QUERY = ("https://exoplanetarchive.ipac.caltech.edu/TAP/sync?query=select+koi_period,koi_duration,koi_srad"
+             "+from+cumulative+where+koi_disposition='CONFIRMED'&format=csv")
+TOI_PLACEHOLDER_PERIOD_D = 690.0
+
+
+def load_kepler_confirmed() -> pd.DataFrame | None:
+    """Confirmed Kepler planets with period, duration and host radius, or None if the archive is unreachable."""
+    try:
+        frame = pd.read_csv(KOI_QUERY)
+    except Exception as error:  # network or archive outage: the check runs without this reference
+        LOG.warning("Kepler KOI table not available: %s", error)
+        return None
+    frame = frame.rename(columns={"koi_period": "period_d", "koi_duration": "duration_h", "koi_srad": "star_radius_rsun"})
+    return frame.dropna()
+
+
+def _ratio_quantiles(frame: pd.DataFrame, lo: float, hi: float) -> dict:
+    sub = frame[(frame["period_d"] >= lo) & (frame["period_d"] < hi) & (frame["star_radius_rsun"] > 0)]
+    if len(sub) < 5:
+        return {"n": int(len(sub))}
+    ratio = sub["duration_h"].to_numpy(dtype=float) / reference_duration_h(sub["period_d"].to_numpy(dtype=float),
+                                                                          sub["star_radius_rsun"].to_numpy(dtype=float))
+    return {"n": int(len(sub)), "ratio_q10_50_90": np.quantile(ratio, [0.1, 0.5, 0.9]).round(3).tolist(),
+            "duration_median": round(float(sub["duration_h"].median()), 2)}
+
+
+def durations(meta: pd.DataFrame, tois: pd.DataFrame, kepler: pd.DataFrame | None = None) -> list[dict]:
     """Period, host radius and normalized duration of batman injections and TOIs, per period bin."""
     bat = meta[meta["inj_model"] == "batman"]
     bat_radius = bat["radius"].fillna(1.0).to_numpy(dtype=float)
@@ -145,6 +171,10 @@ def durations(meta: pd.DataFrame, tois: pd.DataFrame) -> list[dict]:
         entry["toi_share_with_batman_match"] = round(float(tcount[tcount.index.isin(bcount.index)].sum() / k.sum()), 3)
         small = bat_radius[b] <= 2.0
         entry["batman_duration_median_hosts_le_2rsun"] = round(float(np.median(bd[small])), 2) if small.any() else None
+        entry["toi_without_placeholder_periods"] = _ratio_quantiles(
+            tois[tois["period_d"] < TOI_PLACEHOLDER_PERIOD_D], lo, hi)
+        if kepler is not None:
+            entry["kepler_confirmed"] = _ratio_quantiles(kepler, lo, hi)
         out.append(entry)
     return out
 
@@ -329,7 +359,7 @@ def main() -> None:
     tois = pd.read_parquet(hf_hub_download(REFERENCE_REPO, "toi_ephemerides.parquet", repo_type="dataset",
                                            token=os.environ.get("HF_TOKEN")))
     tois = tois[tois["disposition"].isin(["PC", "CP", "KP"]) & (tois["period_d"] > 0)]
-    result = {"distributions": distributions(meta, tois), "durations": durations(meta, tois)}
+    result = {"distributions": distributions(meta, tois), "durations": durations(meta, tois, load_kepler_confirmed())}
 
     rng = np.random.default_rng(0)
     columns = ["category", "source", "flux_z", "flags", "events"]

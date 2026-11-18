@@ -141,6 +141,283 @@
     "toi_rows": 6172,
     "eccentric_share": 0.3
   },
+  "durations": [
+    {
+      "period_lo": 1,
+      "period_hi": 3,
+      "batman": 23754,
+      "toi": 1270,
+      "period_median": [
+        1.8,
+        2.2
+      ],
+      "host_radius_median": [
+        1.04,
+        1.19
+      ],
+      "host_radius_over_2_share": [
+        0.057,
+        0.111
+      ],
+      "duration_ratio_q10_50_90": [
+        [
+          0.659,
+          0.94,
+          1.079
+        ],
+        [
+          0.398,
+          0.802,
+          1.063
+        ]
+      ],
+      "duration_median": [
+        2.09,
+        2.0
+      ],
+      "batman_duration_median_reweighted": 2.32,
+      "toi_share_with_batman_match": 0.976,
+      "batman_duration_median_hosts_le_2rsun": 2.03,
+      "toi_without_placeholder_periods": {
+        "n": 1270,
+        "ratio_q10_50_90": [
+          0.398,
+          0.802,
+          1.063
+        ],
+        "duration_median": 2.0
+      },
+      "kepler_confirmed": {
+        "n": 251,
+        "ratio_q10_50_90": [
+          0.6,
+          0.889,
+          1.103
+        ],
+        "duration_median": 1.86
+      }
+    },
+    {
+      "period_lo": 3,
+      "period_hi": 10,
+      "batman": 30869,
+      "toi": 2968,
+      "period_median": [
+        5.5,
+        4.7
+      ],
+      "host_radius_median": [
+        1.17,
+        1.26
+      ],
+      "host_radius_over_2_share": [
+        0.171,
+        0.121
+      ],
+      "duration_ratio_q10_50_90": [
+        [
+          0.662,
+          0.945,
+          1.088
+        ],
+        [
+          0.453,
+          0.843,
+          1.074
+        ]
+      ],
+      "duration_median": [
+        3.32,
+        2.98
+      ],
+      "batman_duration_median_reweighted": 3.26,
+      "toi_share_with_batman_match": 0.998,
+      "batman_duration_median_hosts_le_2rsun": 3.05,
+      "toi_without_placeholder_periods": {
+        "n": 2968,
+        "ratio_q10_50_90": [
+          0.453,
+          0.843,
+          1.074
+        ],
+        "duration_median": 2.98
+      },
+      "kepler_confirmed": {
+        "n": 945,
+        "ratio_q10_50_90": [
+          0.572,
+          0.907,
+          1.176
+        ],
+        "duration_median": 2.75
+      }
+    },
+    {
+      "period_lo": 10,
+      "period_hi": 30,
+      "batman": 28379,
+      "toi": 967,
+      "period_median": [
+        17.3,
+        14.9
+      ],
+      "host_radius_median": [
+        1.17,
+        1.02
+      ],
+      "host_radius_over_2_share": [
+        0.174,
+        0.047
+      ],
+      "duration_ratio_q10_50_90": [
+        [
+          0.668,
+          0.952,
+          1.101
+        ],
+        [
+          0.446,
+          0.84,
+          1.104
+        ]
+      ],
+      "duration_median": [
+        4.94,
+        3.7
+      ],
+      "batman_duration_median_reweighted": 4.27,
+      "toi_share_with_batman_match": 0.999,
+      "batman_duration_median_hosts_le_2rsun": 4.53,
+      "toi_without_placeholder_periods": {
+        "n": 967,
+        "ratio_q10_50_90": [
+          0.446,
+          0.84,
+          1.104
+        ],
+        "duration_median": 3.7
+      },
+      "kepler_confirmed": {
+        "n": 872,
+        "ratio_q10_50_90": [
+          0.541,
+          0.901,
+          1.22
+        ],
+        "duration_median": 4.02
+      }
+    },
+    {
+      "period_lo": 30,
+      "period_hi": 100,
+      "batman": 30971,
+      "toi": 183,
+      "period_median": [
+        54.7,
+        42.8
+      ],
+      "host_radius_median": [
+        1.18,
+        1.04
+      ],
+      "host_radius_over_2_share": [
+        0.173,
+        0.055
+      ],
+      "duration_ratio_q10_50_90": [
+        [
+          0.673,
+          0.955,
+          1.104
+        ],
+        [
+          0.386,
+          0.789,
+          1.076
+        ]
+      ],
+      "duration_median": [
+        7.25,
+        5.02
+      ],
+      "batman_duration_median_reweighted": 6.28,
+      "toi_share_with_batman_match": 1.0,
+      "batman_duration_median_hosts_le_2rsun": 6.65,
+      "toi_without_placeholder_periods": {
+        "n": 183,
+        "ratio_q10_50_90": [
+          0.386,
+          0.789,
+          1.076
+        ],
+        "duration_median": 5.02
+      },
+      "kepler_confirmed": {
+        "n": 460,
+        "ratio_q10_50_90": [
+          0.56,
+          0.91,
+          1.205
+        ],
+        "duration_median": 5.96
+      }
+    },
+    {
+      "period_lo": 100,
+      "period_hi": 730,
+      "batman": 51859,
+      "toi": 67,
+      "period_median": [
+        269.7,
+        260.2
+      ],
+      "host_radius_median": [
+        1.18,
+        1.22
+      ],
+      "host_radius_over_2_share": [
+        0.173,
+        0.06
+      ],
+      "duration_ratio_q10_50_90": [
+        [
+          0.662,
+          0.945,
+          1.087
+        ],
+        [
+          0.198,
+          0.504,
+          0.979
+        ]
+      ],
+      "duration_median": [
+        12.37,
+        6.94
+      ],
+      "batman_duration_median_reweighted": 12.44,
+      "toi_share_with_batman_match": 1.0,
+      "batman_duration_median_hosts_le_2rsun": 11.17,
+      "toi_without_placeholder_periods": {
+        "n": 48,
+        "ratio_q10_50_90": [
+          0.294,
+          0.633,
+          1.058
+        ],
+        "duration_median": 8.03
+      },
+      "kepler_confirmed": {
+        "n": 154,
+        "ratio_q10_50_90": [
+          0.515,
+          0.926,
+          1.215
+        ],
+        "duration_median": 8.87
+      }
+    }
+  ],
   "cutouts": {
     "batman": 33824,
     "transplant": 14521,
@@ -153,6 +430,8 @@
     "recentred_auc": 0.7121,
     "wings_auc": 0.5665,
     "levelled_auc": 0.7008,
+    "fitted_auc": 0.6019,
+    "fitted_levelled_auc": 0.5577,
     "source_share": {
       "real": {
         "2min": 0.403,
@@ -421,6 +700,116 @@
       0.494,
       0.499
     ],
+    "mean_fitted_levelled": {
+      "real": [
+        -0.0056,
+        -0.007,
+        -0.0079,
+        -0.0099,
+        -0.0115,
+        -0.0093,
+        -0.0115,
+        -0.0119,
+        -0.0107,
+        -0.0123,
+        -0.0161,
+        -0.0304,
+        -0.0473,
+        -0.1142,
+        -0.2525,
+        -0.6203,
+        -0.8069,
+        -0.9158,
+        -0.9881,
+        -1.0336,
+        -1.046,
+        -1.0328,
+        -0.9804,
+        -0.9003,
+        -0.7734,
+        -0.4147,
+        -0.1944,
+        -0.0801,
+        -0.0272,
+        -0.0056,
+        0.0069,
+        0.0098,
+        0.0182,
+        0.0178,
+        0.0176,
+        0.0111,
+        0.0194,
+        0.0197,
+        0.0245,
+        0.0272
+      ],
+      "batman": [
+        -0.0235,
+        -0.0234,
+        -0.0193,
+        -0.0197,
+        -0.0156,
+        -0.0129,
+        -0.0121,
+        -0.0106,
+        -0.0053,
+        -0.0057,
+        -0.0105,
+        -0.0241,
+        -0.0498,
+        -0.1095,
+        -0.2611,
+        -0.6155,
+        -0.8055,
+        -0.9256,
+        -0.9931,
+        -1.0282,
+        -1.0413,
+        -1.0286,
+        -0.98,
+        -0.8926,
+        -0.7633,
+        -0.4182,
+        -0.1894,
+        -0.0718,
+        -0.0254,
+        -0.0008,
+        0.0109,
+        0.0164,
+        0.0187,
+        0.022,
+        0.0218,
+        0.0239,
+        0.0244,
+        0.0257,
+        0.0265,
+        0.0258
+      ]
+    },
+    "fit": {
+      "real": {
+        "offset_h_abs_q50_90": [
+          0.2,
+          0.54
+        ],
+        "duration_ratio_q10_50_90": [
+          0.6,
+          0.9,
+          1.1
+        ]
+      },
+      "batman": {
+        "offset_h_abs_q50_90": [
+          0.14,
+          0.39
+        ],
+        "duration_ratio_q10_50_90": [
+          0.6,
+          0.8,
+          1.0
+        ]
+      }
+    },
     "mean_levelled": {
       "real": [
         -0.0096,
@@ -527,6 +916,8 @@
     "recentred_auc": 0.6298,
     "wings_auc": 0.5526,
     "levelled_auc": 0.6016,
+    "fitted_auc": 0.6138,
+    "fitted_levelled_auc": 0.5789,
     "source_share": {
       "real": {
         "ffi": 0.43,
@@ -795,6 +1186,116 @@
       0.494,
       0.49
     ],
+    "mean_fitted_levelled": {
+      "real": [
+        -0.0079,
+        -0.0102,
+        -0.0131,
+        -0.0142,
+        -0.0157,
+        -0.0138,
+        -0.0157,
+        -0.0145,
+        -0.0127,
+        -0.0163,
+        -0.0198,
+        -0.0339,
+        -0.0491,
+        -0.1162,
+        -0.2597,
+        -0.6228,
+        -0.8123,
+        -0.918,
+        -0.989,
+        -1.0351,
+        -1.0437,
+        -1.0315,
+        -0.9792,
+        -0.8999,
+        -0.7758,
+        -0.4216,
+        -0.1932,
+        -0.076,
+        -0.0219,
+        0.0012,
+        0.0099,
+        0.0122,
+        0.0218,
+        0.022,
+        0.0227,
+        0.0133,
+        0.026,
+        0.0264,
+        0.0339,
+        0.0357
+      ],
+      "transplant": [
+        0.0267,
+        0.0232,
+        0.0242,
+        0.0266,
+        0.0221,
+        0.0187,
+        0.0176,
+        0.0178,
+        0.0125,
+        0.0063,
+        -0.0059,
+        -0.0262,
+        -0.0584,
+        -0.1292,
+        -0.2817,
+        -0.6167,
+        -0.8032,
+        -0.9143,
+        -0.987,
+        -1.029,
+        -1.0436,
+        -1.0319,
+        -0.9886,
+        -0.9054,
+        -0.7779,
+        -0.4676,
+        -0.244,
+        -0.128,
+        -0.0743,
+        -0.0433,
+        -0.0253,
+        -0.0261,
+        -0.0225,
+        -0.018,
+        -0.0175,
+        -0.016,
+        -0.0142,
+        -0.0176,
+        -0.0156,
+        -0.0116
+      ]
+    },
+    "fit": {
+      "real": {
+        "offset_h_abs_q50_90": [
+          0.2,
+          0.56
+        ],
+        "duration_ratio_q10_50_90": [
+          0.6,
+          0.9,
+          1.1
+        ]
+      },
+      "transplant": {
+        "offset_h_abs_q50_90": [
+          0.17,
+          0.53
+        ],
+        "duration_ratio_q10_50_90": [
+          0.6,
+          0.9,
+          1.1
+        ]
+      }
+    },
     "mean_levelled": {
       "real": [
         -0.0139,
