@@ -36,6 +36,8 @@ import pandas as pd
 
 LOG = logging.getLogger("finetune.ld")
 CATALOG = "J/A+A/600/A30"
+CDS_HOSTS = ("cdsarc.cds.unistra.fr", "cdsarc.u-strasbg.fr")
+VIZIER_MIRRORS = ("vizier.cds.unistra.fr", "vizier.cfa.harvard.edu", "vizier.iucaa.in", "vizieridia.saao.ac.za")
 SOLAR_Z = 0.0
 MICROTURBULENCE = 2.0
 
@@ -63,12 +65,12 @@ def _pick_quadratic(tables) -> pd.DataFrame | None:
     return best
 
 
-def _from_cds_ftp(work: Path) -> pd.DataFrame | None:
+def _from_cds_ftp(work: Path, host: str) -> pd.DataFrame | None:
     """Read the quadratic ATLAS table from the CDS archive files and their ReadMe."""
     import requests
     from astropy.io import ascii as astro_ascii
 
-    base = f"https://cdsarc.cds.unistra.fr/ftp/{CATALOG}/"
+    base = f"https://{host}/ftp/{CATALOG}/"
     work.mkdir(parents=True, exist_ok=True)
     readme = requests.get(base + "ReadMe", timeout=60)
     readme.raise_for_status()
@@ -103,17 +105,19 @@ def _with_meta(table, text: str):
     return table
 
 
-def _from_astroquery() -> pd.DataFrame | None:
+def _from_astroquery(server: str) -> pd.DataFrame | None:
     from astroquery.vizier import Vizier
 
     vizier = Vizier(row_limit=-1, columns=["**"])
+    vizier.VIZIER_SERVER = server
     return _pick_quadratic(vizier.get_catalogs(CATALOG))
 
 
 def fetch(out: Path) -> bool:
     frame = None
-    for name, method in (("CDS archive files", lambda: _from_cds_ftp(out.parent / "ld_cds")),
-                         ("astroquery VizieR", _from_astroquery)):
+    sources = [(f"CDS archive files at {h}", lambda h=h: _from_cds_ftp(out.parent / "ld_cds", h)) for h in CDS_HOSTS]
+    sources += [(f"astroquery VizieR at {m}", lambda m=m: _from_astroquery(m)) for m in VIZIER_MIRRORS]
+    for name, method in sources:
         try:
             frame = method()
         except Exception as exc:  # noqa: BLE001 - try the next source, log why this one failed
