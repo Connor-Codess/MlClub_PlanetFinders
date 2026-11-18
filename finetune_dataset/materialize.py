@@ -11,7 +11,9 @@ What it does
 
 Why
     Each sample's random draws come from its own seed (fixed in recipes.parquet),
-    so any job can be re-run and gives identical rows.
+    so any job can be re-run and gives identical rows. lc-finetune batman rows use the v3
+    injection physics (config.INJ_PHYSICS); lc-eval rows keep v2's, so they do not change.
+    v3 reads ld_claret2017_tess.parquet from the plan directory when the plan job could fetch it.
 
 How to run
     python -m finetune_dataset.materialize --plan build/finetune/plan --source ffi --stem s0001 \
@@ -34,12 +36,14 @@ import pyarrow.parquet as pq
 from pretrain_dataset import config as pretrain
 
 from . import config
-from .injection import (KIND_FOR_CLASS, Event, apply_model, batman_injection, cut_window,
+from .injection import (KIND_FOR_CLASS, Event, apply_model, batman_injection, batman_injection_v3, cut_window,
                         encode, hide_outside, observed_mask, patch_labels, transplant_injection)
+from .limb_darkening import load_table
 from .schema import INJECTION_COLUMNS, SAMPLE_SCHEMA
 from .storage import fetch
 
 LOG = logging.getLogger("finetune.materialize")
+LD_TABLE = None   # Claret (2017) TESS coefficients, set in main() from the plan directory when present
 
 ROW_COLUMNS = ["segment_id", "star_key", "source", "sector", "quarter", "slot0", "n_slots", "sigma_p2p_ppm",
                "tmag", "kepmag", "teff", "radius", "quality_tier", *pretrain.CHANNELS_FLOAT16,
@@ -114,7 +118,12 @@ def build_sample(recipe: dict, row: dict, templates: dict[str, dict]) -> dict:
             e.measure(window["flux_z"], observed)
 
     injection = None
-    if category == "injected_batman":
+    if category == "injected_batman" and config.INJ_PHYSICS.get(recipe["dataset"], "v2") == "v3":
+        # the deep-tail draw uses its own stream, so the sample's main draws match v2 where they can
+        deep = bool(np.random.default_rng([int(recipe["seed"]), 1]).uniform() < config.INJ_DEEP_SHARE)
+        injection = batman_injection_v3(rng, observed, s, row["radius"], row["teff"],
+                                        config.INJ_DEEP_SNR_RANGE if deep else snr_range, LD_TABLE, deep)
+    elif category == "injected_batman":
         injection = batman_injection(rng, observed, s, row["radius"], row["teff"], snr_range)
     elif category == "injected_transplant":
         injection = transplant_injection(rng, observed, s, templates[recipe["template_id"]], snr_range)
@@ -199,6 +208,10 @@ def main() -> None:
     for name in ("template_id", "tce_id"):
         recipes[name] = recipes[name].astype(object).where(recipes[name].notna(), None)
     templates = load_templates(args.plan / "templates.parquet")
+    global LD_TABLE
+    LD_TABLE = load_table(args.plan / "ld_claret2017_tess.parquet")
+    LOG.info("limb darkening for v3 injections: %s", "Claret 2017 table" if LD_TABLE is not None
+             else "Kipping 2013 draw (no table in the plan directory)")
     args.out.mkdir(parents=True, exist_ok=True)
     needed = set(recipes["repo"] + ":" + recipes["path"])
     with tempfile.TemporaryDirectory() as tmp:

@@ -42,7 +42,7 @@ SELECTION_SEED = 20261117
 #   filters  rows of a category must pass a test (see select.ROW_FILTERS)
 #   sources  only rows from these sources, in every category
 #   rows     row count (default ROWS_PER_ARM)
-ARMS: dict[str, dict] = {
+WAVE1_ARMS: dict[str, dict] = {
     "baseline": {
         "question": "the v2 mix as built",
     },
@@ -88,12 +88,56 @@ ARMS: dict[str, dict] = {
     "rows_40k": {"question": "data scale", "rows": 40_000},
     "rows_160k": {"question": "data scale", "rows": 160_000},
 }
+
+# Wave 2 (2026-11-18). Every arm starts from lc-finetune v3 and the v2 category shares, then sets:
+#   real_share  share of real planet rows (base 16.0%); the freed rows go to batman and transplants
+#               in their base ratio
+#   deep        False drops the deep-tail batman rows (combined SNR 60-300); True keeps them (~10%)
+#   hosts       "all": every source; "tess": injected and random-negative rows from TESS only (real
+#               planets and EBs keep Kepler); "kdeg": every source, with half of the Kepler rows given
+#               extra noise at training time to match a random FFI star (train.py)
+#   init        a proxy_pretrain checkpoint to start from, or None for training from scratch
+WAVE2_REAL_SHARES = (0.0, 0.05, 0.16)
+
+
+def _wave2_arm(init, share, deep, hosts) -> tuple[str, dict]:
+    name = f"{init or 'scratch'}-r{round(share * 100):02d}-{'deep' if deep else 'nodeep'}-{hosts}"
+    spec = {"question": f"init={init or 'none'}, real share {share:.0%}, deep tail {'on' if deep else 'off'}, "
+                        f"hosts {hosts}",
+            "real_share": share, "init": init, "hosts": hosts, "deep": deep, "filters": {}}
+    if not deep:
+        spec["filters"]["injected_batman"] = "not_deep"
+    if hosts == "tess":
+        spec["host_sources"] = TESS_SOURCES
+    if hosts == "kdeg":
+        spec["kepler_degrade"] = True
+    return name, spec
+
+
+WAVE2_ARMS: dict[str, dict] = dict(
+    [_wave2_arm("pt_mix", share, deep, hosts)
+     for share in WAVE2_REAL_SHARES for deep in (False, True) for hosts in ("all", "tess", "kdeg")]
+    + [_wave2_arm(None, share, deep, "all") for share in (0.0, 0.16) for deep in (False, True)]
+    + [_wave2_arm(init, share, True, "all") for init in ("pt_ffi", "pt_tess") for share in (0.0, 0.16)]
+)
+WAVE2_REFERENCE = "pt_mix-r16-nodeep-all"       # the v2 mix, pretrained
+ARMS = WAVE2_ARMS
+REFERENCE_ARM = WAVE2_REFERENCE
+
+# Kepler noise degradation (hosts "kdeg"): share of Kepler rows degraded per batch, and the lowest
+# combined SNR a positive row may be degraded to
+KEPLER_DEGRADE_SHARE = 0.5
+KEPLER_DEGRADE_MIN_SNR = 3.0
+
 SEEDS = (0, 1, 2)
 
 # ----------------------------------------------------------------------------- model and training
 INPUT_CHANNELS = ("flux_z", "cen_x", "cen_y", "bkg_z")   # plus the observed mask as a fifth channel
 INPUT_CLIP = 20.0
 INPUT_SCALE = 4.0
+# Wave 2 onward: flux_z is compressed as 10 * asinh(flux_z / 10) (build guide, Step 5), the same
+# transform pretraining uses; the other channels keep the clip. Wave 1 clipped flux too.
+FLUX_ASINH = 10.0
 STEM_CHANNELS = 32
 D_MODEL = 96
 N_HEADS = 4

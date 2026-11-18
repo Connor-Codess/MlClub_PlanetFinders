@@ -57,7 +57,7 @@ def main() -> None:
         if not args.no_download:
             download(config.FINETUNE_REPO, "train", args.data, only=paths)
     LOG.info("packing %d rows from %d shards", len(chosen), chosen["path"].nunique())
-    pack_rows(chosen, args.data, args.out)
+    pack_rows(chosen, args.data, args.out, with_events=args.eval)
     LOG.info("wrote %s", args.out)
     if args.eval and args.box_filter_out:
         subprocess.run([sys.executable, "-m", "experiments.finetune_mix.evaluate", "--eval", str(args.out),

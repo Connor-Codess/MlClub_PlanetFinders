@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pretrain_dataset import config as pretrain
 
-BUILD_VERSION = "v2"
+BUILD_VERSION = "v3"
 
 ORG = pretrain.ORG
 FINETUNE_REPO = f"{ORG}/lc-finetune"          # public: stars of the train and validation splits only
@@ -116,6 +116,22 @@ INJ_MIN_A_RS = 3.0
 INJ_SNR_RANGE = {"finetune": (3.0, 60.0), "eval": (2.0, 40.0)}
 INJ_EXPOSURE_DAYS = SLOT_DAYS                 # 30-minute integration
 INJ_SUPERSAMPLE = 15
+
+# v3 batman physics, lc-finetune only. lc-eval keeps the v2 physics, so experiments before and after v3
+# are scored on identical test windows.
+#   deep tail      a share of batman injections drawn at combined SNR 60-300, so very deep planet
+#                  transits are positives too (wave 1: deep real planets were taken for EBs)
+#   SNR correction the planet radius is rescaled by sqrt(target / achieved) after the first model,
+#                  removing v2's median shortfall of about 17%
+#   limb darkening Claret (2017) TESS quadratic coefficients for the host's Teff and log g
+#   eccentricity   a share of orbits get e from the Beta(0.867, 3.03) distribution of Kipping (2013)
+INJ_PHYSICS = {"finetune": "v3", "eval": "v2"}
+INJ_DEEP_SHARE = 0.10
+INJ_DEEP_SNR_RANGE = (60.0, 300.0)
+INJ_SNR_CORRECTION_ROUNDS = 2
+INJ_ECC_SHARE = 0.30
+INJ_ECC_BETA = (0.867, 3.03)
+INJ_MIN_PERIASTRON_RS = 2.0
 DEFAULT_STAR_RADIUS = 1.0
 DEFAULT_TEFF = 5500.0
 

@@ -1,5 +1,5 @@
 {
-  "note": "v2 full build: planets verified by stacked SNR over the star, real windows selected by stacked in-window SNR >= 4, per-star cap 30, injections targeted on combined SNR so short periods include faint per-transit depths, new stacked_snr and n_visible_transits columns.",
+  "note": "v3 full build: deep-injection tail (10% of batman rows at combined SNR 60-300), SNR correction, Claret 2017 limb darkening and 30% eccentric orbits, all for lc-finetune only; lc-eval and lc-benchmarks keep the v2 physics and should come out identical.",
   "sources": [
     "ffi",
     "2min",

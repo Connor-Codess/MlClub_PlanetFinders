@@ -25,6 +25,7 @@ How to run
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -70,7 +71,7 @@ def row_measurements(table: pa.Table) -> pd.DataFrame:
     frame = pd.DataFrame(out, columns=["transit_patch_flux", "negative_patch_flux", "best_visible_snr"])
     for name in ("sample_id", "dataset", "split", "category", "star_key", "source", "inj_model", "inj_snr",
                  "inj_snr_target", "inj_snr_total", "stacked_snr", "n_visible_transits", "n_transit_patches",
-                 "coverage", "benchmark_tce_id"):
+                 "coverage", "benchmark_tce_id", "inj_deep", "inj_ecc", "inj_ld_source", "inj_period_d"):
         frame[name] = table.column(name).to_pandas()
     return frame
 
@@ -149,6 +150,21 @@ def checks(measured: pd.DataFrame, plan: dict) -> tuple[list[dict], dict]:
                                    for m, g in inj.groupby("inj_model")},
         "injected_combined_snr_quantiles": {m: g["inj_snr_total"].quantile([0.1, 0.5, 0.9]).round(2).tolist()
                                             for m, g in inj.groupby("inj_model")},
+        # v3 physics: achieved / target combined SNR, deep share, eccentric share and limb-darkening source
+        "injection_physics": {
+            f"{d}/{m}/{'deep' if bool(deep) else 'main'}": {
+                "rows": int(len(g)),
+                "achieved_over_target_median": round(float((g["inj_snr_total"] / g["inj_snr_target"]).median()), 3),
+                "eccentric_share": round(float((g["inj_ecc"].fillna(0) > 0).mean()), 3),
+                "ld_sources": g["inj_ld_source"].fillna("v2").value_counts().to_dict(),
+            }
+            for (d, m, deep), g in inj.assign(inj_deep=inj["inj_deep"].fillna(False))
+            .groupby(["dataset", "inj_model", "inj_deep"])},
+        # fingerprint of every lc-eval row's identity and injection, to show v3 left lc-eval unchanged
+        "eval_fingerprint": hashlib.sha256(
+            measured[measured["dataset"] == "eval"].sort_values("sample_id")[
+                ["sample_id", "inj_snr_total", "inj_period_d", "stacked_snr"]].round(5).to_csv(index=False)
+            .encode()).hexdigest(),
         "real_stacked_snr_quantiles": {
             f"{d}/{s}/{c}": g["stacked_snr"].quantile([0.1, 0.5, 0.9]).round(2).tolist()
             for (d, s, c), g in measured[measured["category"].str.startswith("real_planet")]

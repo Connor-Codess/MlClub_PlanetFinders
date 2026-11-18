@@ -2,7 +2,8 @@
 
 What it does
     Reads the per-row metadata of every lc-finetune train shard, works out each arm's
-    quota per category from config.ARMS, and takes that many rows. Within a category,
+    quota per category from config.ARMS (real_share, moves, filters, sources and host_sources),
+    and takes that many rows. Within a category,
     rows are taken in one fixed random order, skipping rows that fail the arm's filters,
     so arms share as many rows as they can and the scaling arms are nested
     (rows_20k is part of rows_40k, which is part of baseline, which is part of rows_160k).
@@ -39,7 +40,9 @@ ROW_FILTERS = {
     "inj_snr_ge_3": lambda m: m["inj_snr"] >= 3.0,
     "inj_snr_total_ge_7": lambda m: m["inj_snr_total"] >= 7.0,
     "not_cropped": lambda m: ~m["single_transit_crop"].astype(bool),
+    "not_deep": lambda m: ~m["inj_deep"].fillna(False).astype(bool),
 }
+HOST_CATEGORIES = (*config.INJECTED, "negative_random")
 
 
 def base_shares(meta: pd.DataFrame) -> dict[str, float]:
@@ -51,6 +54,15 @@ def base_shares(meta: pd.DataFrame) -> dict[str, float]:
 def arm_quotas(spec: dict, shares: dict[str, float], scale: float = 1.0) -> dict[str, int]:
     rows = int(round(spec.get("rows", config.ROWS_PER_ARM) * scale))
     quota = {c: rows * shares[c] for c in config.CATEGORIES}
+    if "real_share" in spec:
+        base = sum(shares[c] for c in config.REAL)
+        keep = spec["real_share"] / base if base > 0 else 0.0
+        freed = sum(quota[c] for c in config.REAL) * (1.0 - keep)
+        for c in config.REAL:
+            quota[c] *= keep
+        weight = sum(shares[t] for t in config.INJECTED)
+        for t in config.INJECTED:
+            quota[t] += freed * shares[t] / weight
     for source, targets in spec.get("move", {}).items():
         moved = quota[source]
         quota[source] = 0.0
@@ -74,6 +86,8 @@ def select_arm(name: str, spec: dict, meta: pd.DataFrame, order: dict[str, np.nd
         keep = np.ones(len(rows), dtype=bool)
         if "sources" in spec:
             keep &= rows["source"].isin(spec["sources"]).to_numpy()
+        if "host_sources" in spec and category in HOST_CATEGORIES:
+            keep &= rows["source"].isin(spec["host_sources"]).to_numpy()
         test = spec.get("filters", {}).get(category)
         if test is not None:
             keep &= ROW_FILTERS[test](rows).to_numpy()

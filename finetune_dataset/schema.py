@@ -46,6 +46,7 @@ SAMPLE_SCHEMA = pa.schema([
     ("inj_depth_ppm", pa.float32()), ("inj_snr_target", pa.float32()), ("inj_snr", pa.float32()),
     ("inj_snr_total", pa.float32()), ("inj_star_radius", pa.float32()), ("inj_star_mass", pa.float32()),
     ("inj_star_teff", pa.float32()), ("inj_template_id", pa.string()), ("inj_depth_scale", pa.float32()),
+    ("inj_ecc", pa.float32()), ("inj_w_deg", pa.float32()), ("inj_deep", pa.bool_()), ("inj_ld_source", pa.string()),
     ("benchmark_tce_id", pa.string()),
     ("build_version", pa.string()),
 ])

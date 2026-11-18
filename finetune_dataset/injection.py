@@ -309,6 +309,110 @@ def batman_injection(rng: np.random.Generator, observed: np.ndarray, s: float, r
     })
 
 
+def duration_days_ecc(period_d: float, a_rs: float, rp: float, b: float, ecc: float, w_deg: float) -> float:
+    """Total transit duration with an eccentric orbit (Winn 2010, eq. 14 and 16)."""
+    factor = (1.0 - ecc ** 2) / (1.0 + ecc * math.sin(math.radians(w_deg)))
+    sep = a_rs * factor
+    inc = math.acos(min(b / sep, 1.0))
+    arg = math.sqrt(max((1.0 + rp) ** 2 - b ** 2, 0.0)) / (a_rs * math.sin(inc))
+    return period_d / math.pi * math.asin(min(arg, 1.0)) * math.sqrt(1.0 - ecc ** 2) / (
+        1.0 + ecc * math.sin(math.radians(w_deg)))
+
+
+def batman_injection_v3(rng: np.random.Generator, observed: np.ndarray, s: float, radius: float | None,
+                        teff: float | None, snr_range: tuple[float, float], ld_table=None,
+                        deep: bool = False) -> Injection:
+    """v3 batman injection (lc-finetune only): star-matched limb darkening, eccentric orbits for a
+    share of planets, and a radius rescaled until the measured combined SNR meets its target.
+
+    Same draws and geometry as batman_injection otherwise. deep marks a draw from the deep tail
+    (config.INJ_DEEP_SNR_RANGE), recorded in inj_deep.
+    """
+    import batman
+
+    from .limb_darkening import coefficients, surface_gravity
+
+    radius = float(radius) if radius and radius > 0 and math.isfinite(radius) else config.DEFAULT_STAR_RADIUS
+    teff = float(teff) if teff and math.isfinite(teff) else config.DEFAULT_TEFF
+    mass = star_mass(radius)
+    p_lo, p_hi = config.INJ_PERIOD_RANGE_D
+    p_min = 365.25 * math.sqrt((config.INJ_MIN_A_RS * radius / 215.032) ** 3 / mass)
+    p_lo = min(max(p_lo, p_min), p_hi)
+    period = float(math.exp(rng.uniform(math.log(p_lo), math.log(p_hi))))
+    a_rs = a_over_rs(period, mass, radius)
+    b = float(rng.uniform(0.0, config.INJ_IMPACT_MAX))
+    if ld_table is not None:
+        u1, u2 = coefficients(ld_table, teff, surface_gravity(mass, radius))
+        ld_source = "claret2017"
+    else:
+        u1, u2 = kipping_ld(rng)
+        ld_source = "kipping2013"
+    ecc, w_deg = 0.0, 90.0
+    if rng.uniform() < config.INJ_ECC_SHARE:
+        ecc_max = max(0.0, 1.0 - config.INJ_MIN_PERIASTRON_RS / a_rs)
+        ecc = float(min(rng.beta(*config.INJ_ECC_BETA), ecc_max))
+        w_deg = float(rng.uniform(0.0, 360.0))
+    snr_target = float(math.exp(rng.uniform(*np.log(snr_range))))
+    anchor = _anchor(rng, observed)
+    sep = a_rs * (1.0 - ecc ** 2) / (1.0 + ecc * math.sin(math.radians(w_deg)))
+    b = min(b, 0.9 * sep)
+
+    mu = math.sqrt(max(1.0 - b * b, 0.0))
+    ld_center = (1.0 - u1 * (1.0 - mu) - u2 * (1.0 - mu) ** 2) / (1.0 - u1 / 3.0 - u2 / 6.0)
+    rp = 0.05
+    for _ in range(3):
+        dur_slots = duration_days_ecc(period, a_rs, rp, b, ecc, w_deg) / config.SLOT_DAYS
+        n_obs = observed_transits(_centers(anchor, period / config.SLOT_DAYS, dur_slots / 2.0), dur_slots, observed)
+        depth = snr_target / math.sqrt(n_obs) * s / math.sqrt(max(dur_slots, 1.0))
+        rp = float(np.clip(math.sqrt(max(depth, 0.0) / max(ld_center, 0.05)), *config.INJ_RP_RS_RANGE))
+
+    times = SLOT_CENTERS * config.SLOT_DAYS
+
+    def evaluate(rp_now: float):
+        params = batman.TransitParams()
+        params.t0 = anchor * config.SLOT_DAYS
+        params.per = period
+        params.rp = rp_now
+        params.a = a_rs
+        params.inc = math.degrees(math.acos(min(b / sep, 1.0)))
+        params.ecc = ecc
+        params.w = w_deg
+        params.u = [u1, u2]
+        params.limb_dark = "quadratic"
+        model = batman.TransitModel(params, times, supersample_factor=config.INJ_SUPERSAMPLE,
+                                    exp_time=config.INJ_EXPOSURE_DAYS).light_curve(params)
+        dur = duration_days_ecc(period, a_rs, rp_now, b, ecc, w_deg) / config.SLOT_DAYS
+        centers = _centers(anchor, period / config.SLOT_DAYS, dur / 2.0)
+        snrs = [transit_snr(model, observed, c, dur, s) for c in centers]
+        return np.asarray(model, dtype=np.float64), dur, centers, snrs
+
+    model, dur_slots, centers, snrs = evaluate(rp)
+    for _ in range(config.INJ_SNR_CORRECTION_ROUNDS):
+        achieved = float(np.sqrt(np.sum(np.square(snrs))))
+        if achieved <= 0:
+            break
+        rp_new = float(np.clip(rp * math.sqrt(snr_target / achieved), *config.INJ_RP_RS_RANGE))
+        if abs(rp_new - rp) < 1e-6:
+            break
+        rp = rp_new
+        model, dur_slots, centers, snrs = evaluate(rp)
+
+    events = [Event(c, dur_slots, config.KIND_INJECTED_BATMAN, "injected_batman", "batman", "planet", period)
+              for c in centers]
+    for e, snr in zip(events, snrs):
+        e.expected_snr = snr
+    return Injection(model, events, {
+        "inj_model": "batman", "inj_period_d": period, "inj_t0_slot": anchor, "inj_rp_rs": rp,
+        "inj_a_rs": a_rs, "inj_b": b, "inj_u1": u1, "inj_u2": u2,
+        "inj_duration_h": dur_slots * config.SLOT_HOURS,
+        "inj_depth_ppm": float((1.0 - model.min()) * 1e6), "inj_snr_target": snr_target,
+        "inj_snr": max(snrs) if snrs else 0.0, "inj_snr_total": float(np.sqrt(np.sum(np.square(snrs)))),
+        "inj_star_radius": radius, "inj_star_mass": mass, "inj_star_teff": teff,
+        "inj_template_id": None, "inj_depth_scale": None,
+        "inj_ecc": ecc, "inj_w_deg": w_deg, "inj_deep": bool(deep), "inj_ld_source": ld_source,
+    })
+
+
 def template_model(template: dict, centers: list[float]) -> np.ndarray:
     """Evaluate a transplant template at every slot, using the nearest transit center."""
     centers_arr = np.asarray(centers)

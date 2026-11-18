@@ -30,12 +30,12 @@ def fake_meta(n_per=1500, seed=0):
 
 class TestQuotas:
     def test_every_arm_sums_to_its_rows(self):
-        for name, spec in config.ARMS.items():
+        for name, spec in {**config.WAVE1_ARMS, **config.WAVE2_ARMS}.items():
             q = arm_quotas(spec, SHARES)
             assert sum(q.values()) == spec.get("rows", config.ROWS_PER_ARM), name
 
     def test_moves_empty_the_source(self):
-        q = arm_quotas(config.ARMS["no_real"], SHARES)
+        q = arm_quotas(config.WAVE1_ARMS["no_real"], SHARES)
         assert q["real_planet_short"] == 0 and q["real_planet_long"] == 0
         base = arm_quotas({}, SHARES)
         assert q["negative_random"] == base["negative_random"]
@@ -53,10 +53,10 @@ class TestSelection:
         return select_arm("x", {**spec, "rows": 1000}, self.meta, self.order, SHARES)
 
     def test_filters_and_sources_hold(self):
-        chosen = self.meta.loc[self.meta["sample_id"].isin(self.pick(config.ARMS["v1_rule"])["sample_id"])]
+        chosen = self.meta.loc[self.meta["sample_id"].isin(self.pick(config.WAVE1_ARMS["v1_rule"])["sample_id"])]
         real = chosen[chosen["category"].isin(config.REAL)]
         assert (real["best_transit_snr"] >= 4).all()
-        tess = self.meta.loc[self.meta["sample_id"].isin(self.pick(config.ARMS["tess_only"])["sample_id"])]
+        tess = self.meta.loc[self.meta["sample_id"].isin(self.pick(config.WAVE1_ARMS["tess_only"])["sample_id"])]
         assert set(tess["source"]) <= set(config.TESS_SOURCES)
 
     def test_smaller_arm_is_nested(self):

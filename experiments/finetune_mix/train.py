@@ -6,14 +6,20 @@ What it does
     cross-entropy on patches whose label is 0 or 1 (255 is ignored). Then it scores the
     packed lc-eval val rows (pack.py --eval) with evaluate.score().
 
+    Arms with an init (config.WAVE2_ARMS) start from a proxy_pretrain checkpoint; arms with
+    hosts "kdeg" degrade half of their Kepler rows to FFI noise in every batch (augment.py).
+    When the eval pack has events.parquet, the transit-hiding test runs too.
+
 Outputs (in --out)
-    metrics.json   run settings, training curve, timing and every score from evaluate.py
+    metrics.json   run settings, training curve, timing, every score from evaluate.py and the
+                   transit-hiding test
     scores.npz     per eval window: highest patch probability anywhere and on its transits
     model.pt       final weights
 
 How to run
     python -m experiments.finetune_mix.train --arm-data build/mix/arm --eval build/mix/eval \
-        --arm baseline --seed 0 --out build/mix/results/baseline-s0 [--max-minutes 300] [--steps 10000]
+        --arm baseline --seed 0 --out build/mix/results/baseline-s0 [--max-minutes 300] [--steps 10000] \
+        [--pretrained build/pretrain]
 """
 
 from __future__ import annotations
@@ -30,9 +36,10 @@ import torch
 import torch.nn.functional as F
 
 from . import config
+from .augment import degrade_kepler, positive_caps
 from .data import load_pack, model_input
-from .evaluate import average_precision, score, window_scores
-from .model import Detector, n_parameters
+from .evaluate import average_precision, hiding_test, score, window_scores
+from .model import Detector, load_encoder, n_parameters
 
 LOG = logging.getLogger("mix.train")
 
@@ -53,6 +60,16 @@ def patch_loss(logits: torch.Tensor, label: torch.Tensor) -> torch.Tensor:
 
 
 @torch.no_grad()
+def predict_arrays(model: Detector, x: np.ndarray, observed: np.ndarray, batch: int = 256) -> np.ndarray:
+    model.eval()
+    out = np.empty((len(x), config.N_PATCHES), dtype=np.float32)
+    for start in range(0, len(x), batch):
+        sl = slice(start, start + batch)
+        out[sl] = torch.sigmoid(model(torch.from_numpy(model_input(x[sl], observed[sl])))).numpy()
+    return out
+
+
+@torch.no_grad()
 def predict(model: Detector, pack: dict, batch: int = 256) -> np.ndarray:
     model.eval()
     out = np.empty((len(pack["x"]), config.N_PATCHES), dtype=np.float32)
@@ -63,10 +80,18 @@ def predict(model: Detector, pack: dict, batch: int = 256) -> np.ndarray:
     return out
 
 
-def train(arm: dict, steps: int, seed: int, max_minutes: float) -> tuple[Detector, dict]:
+def train(arm: dict, steps: int, seed: int, max_minutes: float, init: Path | None = None,
+          kepler_degrade: bool = False) -> tuple[Detector, dict]:
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
     model = Detector()
+    loaded = load_encoder(model, init) if init else []
+    meta = arm["meta"]
+    sources = meta["source"].to_numpy()
+    sigmas = meta["sigma_p2p_ppm"].to_numpy(dtype=np.float64)
+    ffi_sigmas = sigmas[(sources == "ffi") & np.isfinite(sigmas)]
+    caps = positive_caps(meta)
+    degraded = 0
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.LEARNING_RATE, weight_decay=config.WEIGHT_DECAY)
     n = len(arm["x"])
     per_epoch = n // config.BATCH_SIZE
@@ -79,7 +104,12 @@ def train(arm: dict, steps: int, seed: int, max_minutes: float) -> tuple[Detecto
             if step >= steps:
                 break
             idx = np.sort(order[b * config.BATCH_SIZE:(b + 1) * config.BATCH_SIZE])
-            x = torch.from_numpy(model_input(arm["x"][idx], arm["observed"][idx]))
+            batch = arm["x"][idx].astype(np.float32)
+            if kepler_degrade:
+                factors = degrade_kepler(batch, arm["observed"][idx], sources[idx], sigmas[idx], ffi_sigmas, rng,
+                                         caps[idx])
+                degraded += int((factors > 1).sum())
+            x = torch.from_numpy(model_input(batch, arm["observed"][idx]))
             label = torch.from_numpy(arm["label"][idx].astype(np.int64))
             for group in optimizer.param_groups:
                 group["lr"] = learning_rate(step, steps)
@@ -101,6 +131,8 @@ def train(arm: dict, steps: int, seed: int, max_minutes: float) -> tuple[Detecto
                     break
         epoch += 1
     info = {"steps": step, "planned_steps": steps, "epochs_seen": step * config.BATCH_SIZE / n,
+            "init": str(init) if init else None, "encoder_tensors_loaded": len(loaded),
+            "kepler_degrade": kepler_degrade, "kepler_rows_degraded": degraded,
             "train_minutes": (time.time() - started) / 60, "stopped_early": stopped_early, "curve": curve}
     return model, info
 
@@ -115,23 +147,34 @@ def main() -> None:
     parser.add_argument("--steps", type=int, default=config.TRAIN_STEPS)
     parser.add_argument("--max-minutes", type=float, default=300.0, help="stop training after this long")
     parser.add_argument("--eval-limit", type=int, help="score only the first N eval rows (smoke tests)")
+    parser.add_argument("--pretrained", type=Path, help="directory holding <init>.pt checkpoints from proxy_pretrain")
     args = parser.parse_args()
+    spec = {**config.WAVE1_ARMS, **config.WAVE2_ARMS}.get(args.arm, {})
+    init = None
+    if spec.get("init"):
+        if args.pretrained is None:
+            parser.error(f"arm {args.arm} starts from {spec['init']}: pass --pretrained")
+        init = args.pretrained / f"{spec['init']}.pt"
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     torch.set_num_threads(config.TORCH_THREADS)
 
     arm = load_pack(args.arm_data)
     LOG.info("arm %s seed %d: %d training rows", args.arm, args.seed, len(arm["x"]))
     rows = len(arm["x"])
-    model, info = train(arm, args.steps, args.seed, args.max_minutes)
+    model, info = train(arm, args.steps, args.seed, args.max_minutes, init, bool(spec.get("kepler_degrade")))
     del arm
 
     evals = load_pack(args.eval)
     if args.eval_limit:
-        evals = {k: v[: args.eval_limit] for k, v in evals.items()}
+        evals = {k: (v[v["row"] < args.eval_limit] if k == "events" else v[: args.eval_limit])
+                 for k, v in evals.items()}
     started = time.time()
     patch = predict(model, evals)
     any_score, on_target = window_scores(patch, evals["target"], evals["label"])
     result = score(evals["meta"], any_score, on_target, average_precision(patch, evals["label"]))
+    if "events" in evals:
+        threshold = result["operating_points"][str(config.FALSE_ALARM_RATES[0])]["threshold"]
+        result["hiding_test"] = hiding_test(lambda x, o: predict_arrays(model, x, o), evals, threshold)
     info["eval_minutes"] = (time.time() - started) / 60
     result["run"] = {"arm": args.arm, "seed": args.seed, "rows": rows, "parameters": n_parameters(model),
                      **info}

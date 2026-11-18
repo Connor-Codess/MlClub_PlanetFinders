@@ -3,12 +3,12 @@
 What it does
     Reads results/<arm>-s<seed>/metrics.json for every run (and results/box_filter), and
     for each arm takes the mean and standard deviation over seeds of every headline number.
-    Each arm is compared with baseline: difference of the means, its standard error
+    Each arm is compared with the reference arm (config.REFERENCE_ARM): difference of the means, its standard error
     (sqrt(sd_arm^2/n_arm + sd_base^2/n_base)) and whether the difference exceeds two
     standard errors.
 
 Outputs (in --out)
-    summary.json   per arm: settings, runs, mean/sd per metric, differences with baseline,
+    summary.json   per arm: settings, runs, mean/sd per metric, differences with the reference arm,
                    and the mean recall per bin (combined SNR, per-transit SNR, period, real)
     summary.md     the same as tables, for reading
     runs.csv       one row per run with the headline numbers
@@ -57,14 +57,14 @@ def compare(frame: pd.DataFrame) -> dict:
     metrics = HEADLINE + ["patch_average_precision"]
     for rate, group in frame.groupby("rate"):
         stats = group.groupby("arm")[metrics].agg(["mean", "std", "count"])
-        base = stats.loc["baseline"] if "baseline" in stats.index else None
+        base = stats.loc[config.REFERENCE_ARM] if config.REFERENCE_ARM in stats.index else None
         per_arm = {}
         for arm, row in stats.iterrows():
             entry = {}
             for metric in metrics:
                 mean, sd, n = row[(metric, "mean")], row[(metric, "std")], row[(metric, "count")]
                 item = {"mean": _num(mean), "sd": _num(sd), "n": int(n)}
-                if base is not None and arm not in ("baseline", "box_filter"):
+                if base is not None and arm not in (config.REFERENCE_ARM, "box_filter", "classical"):
                     bm, bsd, bn = base[(metric, "mean")], base[(metric, "std")], base[(metric, "count")]
                     diff = mean - bm
                     se = math.sqrt((sd if np.isfinite(sd) else 0) ** 2 / max(n, 1)
@@ -104,7 +104,7 @@ def markdown(comparison: dict, bins: dict) -> str:
         lines += [f"## Operating point: {float(rate):.1%} of random windows raise a false alarm", ""]
         header = "| Arm | " + " | ".join(HEADLINE + ["patch AP"]) + " |"
         lines += [header, "|---|" + "---:|" * (len(HEADLINE) + 1)]
-        order = ["box_filter", "baseline"] + [a for a in config.ARMS if a != "baseline"]
+        order = ["box_filter", "classical", config.REFERENCE_ARM] + [a for a in config.ARMS if a != config.REFERENCE_ARM]
         for arm in [a for a in order if a in arms]:
             cells = []
             for metric in HEADLINE + ["patch_average_precision"]:
@@ -120,7 +120,7 @@ def markdown(comparison: dict, bins: dict) -> str:
                 cells.append(text)
             lines.append(f"| {arm} | " + " | ".join(cells) + " |")
         lines += ["", "Values are mean ± sd over seeds; a signed number in parentheses is a difference from",
-                  "baseline larger than two standard errors.", ""]
+                  f"the reference arm ({config.REFERENCE_ARM}) larger than two standard errors.", ""]
         table = bins.get(rate, {}).get("combined_snr", {})
         if table:
             edges = [f"{b['lo']:g}-{b['hi']:g}" if b["hi"] < 1e8 else f">={b['lo']:g}"

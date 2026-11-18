@@ -135,6 +135,11 @@ jobs:
         run: |
           python -m finetune_dataset.choose_samples --scan build/scan --out build/plan \
             --benchmarks build/benchmarks/benchmark_targets.parquet --scale "${{ needs.plan.outputs.scale }}"
+      - name: Fetch TESS limb-darkening coefficients (Claret 2017) for v3 injections
+        continue-on-error: true
+        run: |
+          pip install astroquery
+          python -m finetune_dataset.limb_darkening --fetch --out build/plan/ld_claret2017_tess.parquet
       - id: matrix
         run: echo "matrix=$(python -c 'import json; print(json.dumps(json.load(open("build/plan/plan.json"))["matrix"]))')" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4

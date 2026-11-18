@@ -117,6 +117,18 @@ target, `inj_snr_total` the expected combined SNR and `inj_snr` the expected SNR
 One transit is always placed on observed data. The model multiplies relative flux:
 `flux_z' = ((1 + s * flux_z) * m - 1) / s` with `s = sigma_p2p_ppm * 1e-6`.
 
+**v3 physics (lc-finetune only; lc-eval keeps the description above so experiments stay comparable).**
+
+- **Deep tail.** {config.INJ_DEEP_SHARE:.0%} of batman rows (`inj_deep` true) draw their target combined SNR from
+  {config.INJ_DEEP_SNR_RANGE[0]:g}-{config.INJ_DEEP_SNR_RANGE[1]:g}, so very deep planet transits are positives too.
+- **SNR correction.** After the first model, the planet radius is rescaled by sqrt(target / achieved)
+  ({config.INJ_SNR_CORRECTION_ROUNDS} rounds), so `inj_snr_total` matches `inj_snr_target` (v2 fell short by about 17%).
+- **Limb darkening.** Taken from Claret (2017) TESS-band quadratic coefficients at the host's Teff and log g
+  (`inj_ld_source` = claret2017). It falls back to the uniform draw (kipping2013) only if the table was unavailable.
+- **Eccentric orbits.** {config.INJ_ECC_SHARE:.0%} of orbits have an eccentricity from Beta({config.INJ_ECC_BETA[0]}, {config.INJ_ECC_BETA[1]}) (Kipping 2013)
+  and a uniform argument of periastron (`inj_ecc`, `inj_w_deg`). Periastron stays beyond
+  {config.INJ_MIN_PERIASTRON_RS:g} stellar radii.
+
 **Transplanted real transits.** For known planets on train-split stars (lc-finetune) or validation-split stars
 (lc-eval), every transit in our light curves is cut out, divided by a straight-line fit to its out-of-transit
 slots, and all transits of the planet are stacked in 10-minute bins. A planet becomes a template when it has at

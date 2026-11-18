@@ -36,7 +36,9 @@ import pyarrow.parquet as pq
 from . import config
 
 META_COLUMNS = ["sample_id", "category", "source", "star_key", "single_transit_crop", "inj_model", "inj_snr",
-                "inj_snr_total", "inj_period_d", "stacked_snr", "n_visible_transits", "coverage"]
+                "inj_snr_total", "inj_period_d", "stacked_snr", "n_visible_transits", "coverage",
+                "sigma_p2p_ppm", "inj_snr_target", "inj_deep"]
+OPTIONAL_META = ("inj_snr_target", "inj_deep")   # absent before lc-finetune v3
 ARRAY_COLUMNS = list(config.INPUT_CHANNELS) + ["flags", "patch_label", "patch_overlap"]
 
 
@@ -55,14 +57,22 @@ def best_transit_snr(events) -> float:
     return float(max(snrs)) if snrs else 0.0
 
 
+def meta_columns(path: Path) -> list[str]:
+    names = set(pq.ParquetFile(path).schema_arrow.names)
+    return [c for c in META_COLUMNS if c in names or c not in OPTIONAL_META]
+
+
 def read_meta(files: list[Path], root: Path) -> pd.DataFrame:
     """Per-row metadata of every shard, with the shard path and row number."""
     frames = []
     for f in files:
-        table = pq.read_table(f, columns=META_COLUMNS + ["events"])
+        table = pq.read_table(f, columns=meta_columns(f) + ["events"])
         frame = table.drop(["events"]).to_pandas()
         frame["best_transit_snr"] = [best_transit_snr(ev) for ev in table.column("events").to_pylist()]
         frame["path"] = str(Path(f).resolve().relative_to(Path(root).resolve()))
+        for c in OPTIONAL_META:
+            if c not in frame:
+                frame[c] = None
         frame["row"] = np.arange(len(frame), dtype=np.int64)
         frames.append(frame)
     return pd.concat(frames, ignore_index=True)
@@ -88,8 +98,12 @@ def _decode(column, dtype, width: int) -> np.ndarray:
     return np.frombuffer(b"".join(column), dtype=dtype).reshape(len(column), width)
 
 
-def pack_rows(chosen: pd.DataFrame, root: Path, out: Path) -> None:
-    """Write the arrays of the chosen rows (columns path, row) in the order given."""
+def pack_rows(chosen: pd.DataFrame, root: Path, out: Path, with_events: bool = False) -> None:
+    """Write the arrays of the chosen rows (columns path, row) in the order given.
+
+    with_events also writes events.parquet (row, center_slot, duration_slots, is_planet, visible,
+    kind) for the transit-hiding test.
+    """
     out.mkdir(parents=True, exist_ok=True)
     n = len(chosen)
     x = np.lib.format.open_memmap(out / "x.npy", mode="w+", dtype=np.float16,
@@ -98,10 +112,11 @@ def pack_rows(chosen: pd.DataFrame, root: Path, out: Path) -> None:
     label = np.lib.format.open_memmap(out / "label.npy", mode="w+", dtype=np.uint8, shape=(n, config.N_PATCHES))
     target = np.lib.format.open_memmap(out / "target.npy", mode="w+", dtype=np.uint8, shape=(n, config.N_PATCHES))
     chosen = chosen.reset_index(drop=True)
-    metas = []
+    metas, events = [], []
     for path, group in chosen.groupby("path", sort=True):
         rows = group["row"].to_numpy()
-        table = pq.read_table(root / path, columns=ARRAY_COLUMNS + META_COLUMNS).take(rows)
+        extra = ["events"] if with_events else []
+        table = pq.read_table(root / path, columns=ARRAY_COLUMNS + meta_columns(root / path) + extra).take(rows)
         at = group.index.to_numpy()
         for i, name in enumerate(config.INPUT_CHANNELS):
             x[at, i] = _decode(table.column(name).to_pylist(), "<f2", config.WINDOW_SLOTS)
@@ -111,12 +126,24 @@ def pack_rows(chosen: pd.DataFrame, root: Path, out: Path) -> None:
         overlap = _decode(table.column("patch_overlap").to_pylist(), np.uint8, config.N_PATCHES)
         label[at] = train_label(patch_label, overlap)
         target[at] = target_mask(patch_label)
-        meta = table.select(META_COLUMNS).to_pandas()
+        meta = table.select(meta_columns(root / path)).to_pandas()
         meta.index = at
         metas.append(meta)
+        if with_events:
+            for i, evs in zip(at, table.column("events").to_pylist()):
+                for e in evs or []:
+                    events.append({"row": int(i), "center_slot": float(e["center_slot"]),
+                                   "duration_slots": float(e["duration_slots"]), "is_planet": bool(e["is_planet"]),
+                                   "visible": bool(e["visible"]), "kind": str(e["kind"])})
     for arr in (x, observed, label, target):
         arr.flush()
     meta = pd.concat(metas).sort_index()
+    for c in OPTIONAL_META:
+        if c not in meta:
+            meta[c] = None
+    if with_events:
+        pd.DataFrame(events, columns=["row", "center_slot", "duration_slots", "is_planet", "visible", "kind"]) \
+            .to_parquet(out / "events.parquet", index=False)
     extra = [c for c in ("best_transit_snr",) if c in chosen.columns]
     for c in extra:
         meta[c] = chosen[c].to_numpy()
@@ -127,12 +154,20 @@ def load_pack(path: Path, mmap: bool = False) -> dict:
     mode = "r" if mmap else None
     out = {name: np.load(path / f"{name}.npy", mmap_mode=mode) for name in ("x", "observed", "label", "target")}
     out["meta"] = pd.read_parquet(path / "meta.parquet")
+    if (path / "events.parquet").exists():
+        out["events"] = pd.read_parquet(path / "events.parquet")
     return out
 
 
-def model_input(x: np.ndarray, observed: np.ndarray) -> np.ndarray:
-    """float32 (n, 5, 1296): clipped and scaled channels, zero where unobserved, plus the mask."""
-    obs = observed.astype(np.float32)[:, None, :]
+def compress(x: np.ndarray) -> np.ndarray:
+    """Channels as the model sees them: flux asinh-compressed, the rest clipped; both scaled."""
     z = np.nan_to_num(x.astype(np.float32), nan=0.0, posinf=0.0, neginf=0.0)
-    z = np.clip(z, -config.INPUT_CLIP, config.INPUT_CLIP) / config.INPUT_SCALE * obs
-    return np.concatenate([z, obs], axis=1)
+    out = np.clip(z, -config.INPUT_CLIP, config.INPUT_CLIP)
+    out[:, 0] = config.FLUX_ASINH * np.arcsinh(z[:, 0] / config.FLUX_ASINH)
+    return out / config.INPUT_SCALE
+
+
+def model_input(x: np.ndarray, observed: np.ndarray) -> np.ndarray:
+    """float32 (n, 5, 1296): compressed and scaled channels, zero where unobserved, plus the mask."""
+    obs = observed.astype(np.float32)[:, None, :]
+    return np.concatenate([compress(x) * obs, obs], axis=1)

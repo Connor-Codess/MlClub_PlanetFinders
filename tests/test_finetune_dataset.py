@@ -234,3 +234,31 @@ def test_card_headers_are_valid_yaml():
     meta = yaml.safe_load(header.split("---")[1])
     assert meta["pretty_name"] == "lc-x: a title, with: colons"
     assert [d["split"] for d in meta["configs"][0]["data_files"]] == ["train", "validation"]
+
+
+class TestV3Injection:
+    def test_eccentric_duration_reduces_to_circular(self):
+        from finetune_dataset.injection import duration_days, duration_days_ecc
+        assert duration_days_ecc(10.0, 20.0, 0.05, 0.3, 0.0, 90.0) == pytest.approx(duration_days(10.0, 20.0, 0.05, 0.3))
+
+    def test_v3_reaches_target_and_records_physics(self):
+        pytest.importorskip("batman")
+        from finetune_dataset.injection import batman_injection_v3
+        rng = np.random.default_rng(11)
+        observed = np.ones(W, bool)
+        ratios, eccentric = [], 0
+        for _ in range(30):
+            inj = batman_injection_v3(rng, observed, 1e-3, 1.0, 5800.0, (8.0, 8.0))
+            if inj.params["inj_rp_rs"] < config.INJ_RP_RS_RANGE[1] - 1e-6:
+                ratios.append(inj.params["inj_snr_total"] / inj.params["inj_snr_target"])
+            eccentric += inj.params["inj_ecc"] > 0
+            assert inj.params["inj_ld_source"] == "kipping2013"
+        assert np.median(ratios) == pytest.approx(1.0, abs=0.03)
+        assert 0 < eccentric < 30
+
+    def test_limb_darkening_lookup_uses_nearest_grid_point(self):
+        import pandas as pd
+        from finetune_dataset.limb_darkening import coefficients, surface_gravity
+        table = pd.DataFrame({"teff": [5000.0, 6000.0], "logg": [4.5, 4.5], "u1": [0.4, 0.3], "u2": [0.2, 0.25]})
+        assert coefficients(table, 5900.0, 4.4) == (0.3, 0.25)
+        assert surface_gravity(1.0, 1.0) == pytest.approx(4.438)

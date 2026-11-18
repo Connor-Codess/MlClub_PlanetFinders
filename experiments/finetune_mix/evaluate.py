@@ -186,3 +186,64 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+def hiding_rows(meta: pd.DataFrame, events: pd.DataFrame, target: np.ndarray) -> pd.DataFrame:
+    """Injected eval windows with two or more visible transits and combined SNR >= 4.
+
+    One row per window: the transit kept (the first visible one), the patches that count as
+    finding it (its mid-time patch and one either side) and the slots of every other transit,
+    which the test hides.
+    """
+    planets = events[events["is_planet"] & events["visible"]].sort_values(["row", "center_slot"])
+    counts = planets.groupby("row").size()
+    rows = []
+    for row, group in planets[planets["row"].isin(counts[counts >= 2].index)].groupby("row"):
+        m = meta.iloc[row]
+        if m["category"] not in config.INJECTED or not (m["inj_snr_total"] >= 4):
+            continue
+        keep = group.iloc[0]
+        patch = int(keep["center_slot"] // config.PATCH_SLOTS)
+        patches = [p for p in range(patch - config.TARGET_DILATION, patch + config.TARGET_DILATION + 1)
+                   if 0 <= p < config.N_PATCHES]
+        hide = np.zeros(config.WINDOW_SLOTS, dtype=bool)
+        slots = np.arange(config.WINDOW_SLOTS) + 0.5
+        for _, other in group.iloc[1:].iterrows():
+            hide |= np.abs(slots - other["center_slot"]) < other["duration_slots"] / 2.0 + 2.0
+        rows.append({"row": int(row), "keep_patches": patches, "hide": hide,
+                     "n_transits": len(group), "inj_snr_total": float(m["inj_snr_total"]),
+                     "inj_snr": float(m["inj_snr"]), "inj_period_d": float(m["inj_period_d"])})
+    return pd.DataFrame(rows)
+
+
+def hiding_test(predict_fn, pack: dict, threshold: float) -> dict:
+    """Recall of one kept transit with its siblings present, and with them hidden.
+
+    predict_fn(x, observed) returns patch probabilities. A large drop when siblings are hidden
+    means the model combines repeated transits; no drop means it finds each one alone.
+    """
+    table = hiding_rows(pack["meta"], pack["events"], pack["target"])
+    if table.empty:
+        return {"windows": 0}
+    idx = table["row"].to_numpy()
+    x = pack["x"][idx].astype(np.float32)
+    observed = pack["observed"][idx].copy()
+    full = predict_fn(x, observed)
+    hide = np.stack(table["hide"].to_numpy())
+    x_hidden = np.where(hide[:, None, :], 0.0, x)
+    hidden = predict_fn(x_hidden, np.where(hide, 0, observed))
+    keep = [np.asarray(p) for p in table["keep_patches"]]
+    found_full = np.array([full[i, k].max() > threshold for i, k in enumerate(keep)])
+    found_hidden = np.array([hidden[i, k].max() > threshold for i, k in enumerate(keep)])
+    out = {"windows": int(len(table)), "kept_found_with_siblings": float(found_full.mean()),
+           "kept_found_alone": float(found_hidden.mean()), "bins": []}
+    stack = (table["inj_period_d"] < 10) & (table["inj_snr"] < 4) & (table["inj_snr_total"] >= 7)
+    out["stack_regime"] = {"windows": int(stack.sum()),
+                           "kept_found_with_siblings": float(found_full[stack].mean()) if stack.any() else None,
+                           "kept_found_alone": float(found_hidden[stack].mean()) if stack.any() else None}
+    for lo, hi in zip(config.PER_TRANSIT_SNR_BINS[:-1], config.PER_TRANSIT_SNR_BINS[1:]):
+        m = ((table["inj_snr"] >= lo) & (table["inj_snr"] < hi)).to_numpy()
+        out["bins"].append({"per_transit_lo": float(lo), "per_transit_hi": float(hi), "n": int(m.sum()),
+                            "with_siblings": float(found_full[m].mean()) if m.any() else None,
+                            "alone": float(found_hidden[m].mean()) if m.any() else None})
+    return out

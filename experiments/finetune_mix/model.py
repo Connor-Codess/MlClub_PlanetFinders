@@ -17,6 +17,7 @@ What it is
 
 How to use
     model = Detector(); logits = model(torch.randn(8, 5, 1296))   # (8, 162)
+    load_encoder(model, "pretrained.pt")    # start from a proxy_pretrain checkpoint (head stays new)
 """
 
 from __future__ import annotations
@@ -46,9 +47,26 @@ class Detector(nn.Module):
         self.head = nn.Linear(d, 1)
         nn.init.normal_(self.position, std=0.02)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
+        """(batch, 162, d) patch features before the head."""
         tokens = self.patchify(self.stem(x)).transpose(1, 2) + self.position
-        return self.head(self.norm(self.encoder(tokens))).squeeze(-1)
+        return self.norm(self.encoder(tokens))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.head(self.encode(x)).squeeze(-1)
+
+
+ENCODER_PREFIXES = ("stem.", "patchify.", "position", "encoder.", "norm.")
+
+
+def load_encoder(model: Detector, path) -> list[str]:
+    """Load pretrained encoder weights (everything but the head); returns the keys loaded."""
+    state = torch.load(path, map_location="cpu")
+    keep = {k: v for k, v in state.items() if k.startswith(ENCODER_PREFIXES)}
+    missing, unexpected = model.load_state_dict(keep, strict=False)
+    if unexpected or any(not k.startswith("head.") for k in missing):
+        raise RuntimeError(f"encoder checkpoint does not match: missing {missing}, unexpected {unexpected}")
+    return sorted(keep)
 
 
 def n_parameters(model: nn.Module) -> int:
