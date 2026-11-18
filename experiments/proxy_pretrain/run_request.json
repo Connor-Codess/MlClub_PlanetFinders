@@ -1,0 +1,6 @@
+{
+  "note": "Wave 2: pretrain the three proxy variants (current mix, FFI only, TESS only).",
+  "variants": ["pt_mix", "pt_ffi", "pt_tess"],
+  "steps": null,
+  "windows": null
+}
