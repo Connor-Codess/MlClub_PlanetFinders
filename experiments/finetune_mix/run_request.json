@@ -1,5 +1,6 @@
 {
-  "note": "First wave (relaunch after a path fix): all 13 arms, 3 seeds each, 10,000 steps per run, scored on lc-eval val.",
+  "note": "Wave 2: 26 arms x 3 seeds on lc-finetune v3 (Claret limb darkening, run 44279662349), 10,000 steps per run, scored on lc-eval val; pretrained arms start from proxy pretraining run 44271393676. Adds the classical baseline, realism checks, matched-false-alarm recall and the transit-hiding test.",
   "arms": null,
-  "steps": null
+  "steps": null,
+  "pretrain_run_id": 44271393676
 }
