@@ -19,6 +19,11 @@ What it does
                               next to real_long_single_for_matching it tests whether injections
                               are as easy as real planets of the same SNR
     hiding_test               mean over seeds of train.py's transit-hiding test, per arm
+    fa<rate>_*                recall of injections (all and combined SNR 4-10), real short- and
+                              long-period planets, and EB false alarms, with the threshold set at
+                              other random-window false-alarm rates (0.5% to 30%): a curve on
+                              which the classical baseline can be compared at its own operating
+                              point, not only at 1%
 
     Each value is the mean and standard deviation over an arm's seeds.
 
@@ -40,6 +45,8 @@ import numpy as np
 import pandas as pd
 
 from . import config
+
+CURVE_RATES = (0.005, 0.01, 0.02, 0.05, 0.1, 0.3)
 
 
 def subsets(meta: pd.DataFrame) -> dict[str, np.ndarray]:
@@ -98,6 +105,16 @@ def run_values(scores: dict, meta: pd.DataFrame, masks: dict[str, np.ndarray]) -
         "neg1_real_long": recall(cat == "real_planet_long", matched),
         "neg1_eb_false_alarm": float((any_score[eb] > matched).mean()),
     })
+    combined = meta["inj_snr_total"].to_numpy()
+    injected = np.isin(cat, config.INJECTED)
+    for rate in CURVE_RATES:
+        t = np.quantile(any_score[random], 1.0 - rate)
+        key = f"fa{rate * 100:g}"
+        out[f"{key}_injected"] = recall(injected, t)
+        out[f"{key}_faint"] = recall(injected & (combined >= 4) & (combined < 10), t)
+        out[f"{key}_real_short"] = recall(cat == "real_planet_short", t)
+        out[f"{key}_real_long"] = recall(cat == "real_planet_long", t)
+        out[f"{key}_eb_false_alarm"] = float((any_score[eb] > t).mean())
     return out
 
 
@@ -136,7 +153,7 @@ def main() -> None:
                                  | {"windows": int(g["windows"].iloc[0])} for arm, g in h.groupby("arm")}
     (args.out / "extra.json").write_text(json.dumps(result, indent=1))
     for arm, values in arms.items():
-        print(arm.ljust(18), " ".join(f"{c}={v[0]:.3f}" for c, v in values.items()))
+        print(arm.ljust(24), " ".join(f"{c}={v[0]:.3f}" for c, v in values.items() if not c.startswith("fa")))
 
 
 if __name__ == "__main__":
