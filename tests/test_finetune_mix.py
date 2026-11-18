@@ -188,4 +188,6 @@ class TestRealism:
         assert result["shape_auc"] > 0.8
         assert result["recentred_auc"] < 0.65
         assert result["wings_auc"] < 0.65
+        assert result["levelled_auc"] < 0.65
+        assert len(result["levelled_bin_auc"]) == 40
         assert len(result["mean_shape"]["real"]) == 40

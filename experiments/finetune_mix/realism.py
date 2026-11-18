@@ -20,6 +20,9 @@ What it does
                       catalog ephemeris, which can be off by an hour or more, injections are not
            wings      only the shape bins outside 1.2 durations: tells the hosts' noise apart,
                       not the transit
+           levelled   the recentred shape with the median of its wings subtracted and rescaled
+                      to unit depth, so a baseline offset next to the transit cannot help; the
+                      AUC of each of its bins on its own shows where the classes differ
            by source  real against batman within TESS rows and within Kepler rows separately
            mean shapes  the average shape of each class in the matched sample, for plots
     3. Matched recall is computed by analyze.py from the training runs (real long-period
@@ -179,10 +182,13 @@ def classify(cut: pd.DataFrame, a: str, b: str, rng: np.random.Generator, detail
     centres = (edges[:-1] + edges[1:]) / 2
     features = {"shape": np.stack(data["shape"].to_numpy()), "raw": np.stack(data["raw"].to_numpy()),
                 "recentred": np.stack(data["recentred"].to_numpy())}
-    features["wings"] = features["shape"][:, np.abs(centres) > 1.2]
-    if not detail:
-        features = {k: features[k] for k in ("shape", "raw")}
-    for name, x in features.items():
+    wings = np.abs(centres) > 1.2
+    features["wings"] = features["shape"][:, wings]
+    rec = features["recentred"]
+    levelled = rec - np.median(rec[:, wings], axis=1, keepdims=True)
+    depth = -levelled[:, SHAPE_BINS // 2 - 3:SHAPE_BINS // 2 + 3].mean(axis=1, keepdims=True)
+    features["levelled"] = np.where(depth > 0, levelled / np.where(depth > 0, depth, 1.0), 0.0)
+    for name, x in (features.items() if detail else ((k, features[k]) for k in ("shape", "raw"))):
         folds = StratifiedKFold(5, shuffle=True, random_state=0)
         prob = cross_val_predict(HistGradientBoostingClassifier(max_iter=300, random_state=0), x, y, cv=folds,
                                  method="predict_proba")[:, 1]
@@ -195,6 +201,10 @@ def classify(cut: pd.DataFrame, a: str, b: str, rng: np.random.Generator, detail
         result["mean_recentred"] = {c: np.stack(data[data["category"] == c]["recentred"].to_numpy()).mean(axis=0)
                                     .round(4).tolist() for c in (a, b)}
         result["phase_bins"] = centres.round(3).tolist()
+        result["levelled_bin_auc"] = [round(float(roc_auc_score(y, features["levelled"][:, i])), 3)
+                                      for i in range(SHAPE_BINS)]
+        result["mean_levelled"] = {c: features["levelled"][y == (1 if c == a else 0)].mean(axis=0).round(4).tolist()
+                                   for c in (a, b)}
         result["by_source"] = {}
         for group, sources in (("tess", ("ffi", "2min")), ("kepler", ("kepler",))):
             sub = cut[cut["source"].isin(sources)]
