@@ -131,11 +131,14 @@ baseline when the difference exceeds two standard errors.
 | `evaluate.py` | Thresholds, recall numbers, bins, average precision, box-filter baseline, transit-hiding test |
 | `augment.py` | Kepler noise degradation (fine-tuning `kdeg` arms and proxy pretraining) |
 | `classical.py` | wotan + box search + BLS baseline, in slices, then merged and scored |
-| `realism.py` | Distribution comparison with TOIs and the real-versus-batman classifier |
+| `realism.py` | Distributions and per-star durations against TOIs and confirmed Kepler planets; real-versus-injection classifiers with diagnostics |
 | `aggregate.py` | Combines all runs into `summary.json`, `summary.md` and `runs.csv` |
-| `analyze.py` | Recomputes recall on question-specific subsets from every run's scores (`extra.json`) |
+| `analyze.py` | Recomputes recall on question-specific subsets, false-alarm curves and the wave 2 decision rule from every run's scores (`extra.json`) |
+| `benchmark.py` | Scores one arm's seeds on lc-benchmarks and compares with the published papers |
 | `results/wave1/` | Wave 1 results and findings (run 44000179513) |
-| `run_request.json` | Pushing a change to this file starts the workflow |
+| `results/wave2/` | Wave 2 results, findings, realism checks and the benchmark comparison (run 44297108133) |
+| `run_request.json` | Pushing a change to this file starts the experiment workflow |
+| `benchmark_request.json` | Pushing a change to this file starts `benchmark-eval.yml` for one arm of a finished run |
 
 ## How to run
 
@@ -152,6 +155,14 @@ Wave 1 (2026-11-17): the v2 mix is the best-balanced of 13 arms, and its stacked
 short-period transits (20.3% against 14.3% recall). Real planets deeper than SNR 25 are mostly missed,
 because training injections stop near SNR 50 while EB negatives are deep. See
 [`results/wave1/README.md`](results/wave1/README.md).
+
+Wave 2 (2026-11-18): the pre-registered winner is `pt_mix-r00-deep-all`, pretrained on `pt_mix`, with no real
+planets among the fine-tuning rows and the deep injection tail. Against the v2 mix, pretrained, it raises faint
+recall from 17.9% to 21.7% and faint repeated short-period recall from 21.1% to 32.9% at the same real long-period
+recall, and loses about 6 points on real short-period planets. Pretraining adds 3.5 points of real long-period
+recall and 9 points on deep long-period planets; the deep tail adds 8.5 points on those. On the papers' test sets
+it detects 85% of Salinas et al.'s single-transit candidates. See
+[`results/wave2/README.md`](results/wave2/README.md).
 
 Locally:
 
@@ -184,3 +195,4 @@ Tests: `python -m pytest tests/test_finetune_mix.py -q`.
 | 2026-11-16 | First version: 13 arms × 3 seeds, 10,000 steps, lc-eval val |
 | 2026-11-17 | Wave 1 finished (run 44000179513); findings in `results/wave1/README.md`. Added `analyze.py` to the summary job |
 | 2026-11-18 | Wave 2: 26 arms on lc-finetune v3, pretrained encoders, Kepler degradation, asinh flux input, transit-hiding test, classical baseline, realism checks |
+| 2026-11-18 | Wave 2 finished (run 44297108133): winner `pt_mix-r00-deep-all`. Added false-alarm curves and the decision rule to `analyze.py`, realism diagnostics, `benchmark.py` and `benchmark-eval.yml` (run 44392254586) |
