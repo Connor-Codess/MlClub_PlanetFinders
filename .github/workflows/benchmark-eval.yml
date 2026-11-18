@@ -34,7 +34,9 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
           cache-dependency-path: experiments/finetune_mix/requirements.txt
-      - run: pip install -r experiments/finetune_mix/requirements.txt pytest
+      - run: |
+          pip install -r experiments/finetune_mix/requirements.txt pytest scikit-learn
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
       - run: python -m pytest tests/test_finetune_mix.py -q
       - id: request
         run: |
