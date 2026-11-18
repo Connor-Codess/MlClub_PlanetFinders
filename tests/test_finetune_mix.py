@@ -190,4 +190,24 @@ class TestRealism:
         assert result["wings_auc"] < 0.65
         assert result["levelled_auc"] < 0.65
         assert len(result["levelled_bin_auc"]) == 40
+        assert result["fitted_levelled_auc"] < 0.65
+        assert abs(result["fit"]["real"]["offset_h_abs_q50_90"][0] - 1.0) <= 0.5
+        assert result["fit"]["batman"]["offset_h_abs_q50_90"][0] <= 0.5
         assert len(result["mean_shape"]["real"]) == 40
+
+    def test_duration_ratio_removes_period_and_host_size(self):
+        from experiments.finetune_mix.realism import durations, reference_duration_h
+
+        rng = np.random.default_rng(0)
+        n = 4000
+        period = np.exp(rng.uniform(np.log(30), np.log(100), n))
+        radius = rng.choice([1.0, 3.0], n)
+        meta = pd.DataFrame({"inj_model": "batman", "inj_period_d": period, "radius": radius,
+                             "inj_duration_h": 0.8 * reference_duration_h(period, radius)})
+        tp = np.exp(rng.uniform(np.log(30), np.log(40), 300))
+        tois = pd.DataFrame({"period_d": tp, "star_radius_rsun": 1.0, "duration_h": 0.8 * reference_duration_h(tp, 1.0)})
+        entry = next(e for e in durations(meta, tois) if e["period_lo"] == 30)
+        assert entry["duration_median"][0] > 1.3 * entry["duration_median"][1]
+        assert entry["duration_ratio_q10_50_90"][0][1] == pytest.approx(0.8, abs=0.01)
+        assert entry["duration_ratio_q10_50_90"][1][1] == pytest.approx(0.8, abs=0.01)
+        assert entry["batman_duration_median_reweighted"] == pytest.approx(entry["duration_median"][1], rel=0.05)

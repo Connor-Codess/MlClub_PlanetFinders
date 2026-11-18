@@ -26,6 +26,10 @@ What it does
                       to unit depth, so a baseline offset next to the transit cannot help; the
                       AUC of each of its bins on its own shows where the classes differ
            by source  real against batman within TESS rows and within Kepler rows separately
+           fitted     the shape cut at a centre and duration fitted to each cutout (box search
+                      over half a duration of offset and 0.6-1.6 times the duration), for every
+                      class alike, so catalog ephemeris and duration errors cannot help; also as
+                      fitted_levelled; the fitted offsets and duration ratios are reported per class
            mean shapes  the average shape of each class in the matched sample, for plots
     3. Matched recall is computed by analyze.py from the training runs (real long-period
        planets against batman injections matched in SNR, period and transit count).
@@ -85,6 +89,66 @@ def distributions(meta: pd.DataFrame, tois: pd.DataFrame) -> dict:
             "eccentric_share": round(float((bat["inj_ecc"].fillna(0) > 0).mean()), 3) if "inj_ecc" in bat else None}
 
 
+def reference_duration_h(period_d: np.ndarray, radius: np.ndarray) -> np.ndarray:
+    """Central-transit duration of a circular orbit, in hours, with the injections' mass-radius relation."""
+    radius = np.where(np.isfinite(radius) & (radius > 0), radius, 1.0)
+    mass = np.where(radius < 1.5, np.clip(radius ** 1.25, 0.1, 1.6), 1.2)
+    a_rs = 215.032 * (mass * (period_d / 365.25) ** 2) ** (1.0 / 3.0) / radius
+    return period_d / np.pi * np.arcsin(np.minimum(1.0 / a_rs, 1.0)) * 24.0
+
+
+def _weighted_median(values: np.ndarray, weights: np.ndarray) -> float:
+    keep = np.isfinite(values) & (weights > 0)
+    if not keep.any():
+        return float("nan")
+    order = np.argsort(values[keep])
+    cum = np.cumsum(weights[keep][order])
+    return float(values[keep][order][np.searchsorted(cum, cum[-1] / 2)])
+
+
+def durations(meta: pd.DataFrame, tois: pd.DataFrame) -> list[dict]:
+    """Period, host radius and normalized duration of batman injections and TOIs, per period bin."""
+    bat = meta[meta["inj_model"] == "batman"]
+    bat_radius = bat["radius"].fillna(1.0).to_numpy(dtype=float)
+    bat_ratio = bat["inj_duration_h"].to_numpy(dtype=float) / reference_duration_h(bat["inj_period_d"].to_numpy(dtype=float), bat_radius)
+    tois = tois[tois["star_radius_rsun"].notna() & (tois["star_radius_rsun"] > 0) & tois["duration_h"].notna()]
+    toi_radius = tois["star_radius_rsun"].to_numpy(dtype=float)
+    toi_ratio = tois["duration_h"].to_numpy(dtype=float) / reference_duration_h(tois["period_d"].to_numpy(dtype=float), toi_radius)
+    radius_edges = np.array([0, 0.6, 0.8, 1.0, 1.2, 1.5, 2.0, 3.0, 5.0, np.inf])
+    out = []
+    for lo, hi in zip(PERIOD_BINS[:-1], PERIOD_BINS[1:]):
+        b = ((bat["inj_period_d"] >= lo) & (bat["inj_period_d"] < hi)).to_numpy()
+        k = ((tois["period_d"] >= lo) & (tois["period_d"] < hi)).to_numpy()
+        entry = {"period_lo": lo, "period_hi": hi, "batman": int(b.sum()), "toi": int(k.sum())}
+        if not b.any() or k.sum() < 5:
+            out.append(entry)
+            continue
+        bp, tp = bat["inj_period_d"].to_numpy(dtype=float)[b], tois["period_d"].to_numpy(dtype=float)[k]
+        bd, td = bat["inj_duration_h"].to_numpy(dtype=float)[b], tois["duration_h"].to_numpy(dtype=float)[k]
+        entry.update({
+            "period_median": [round(float(np.median(bp)), 1), round(float(np.median(tp)), 1)],
+            "host_radius_median": [round(float(np.median(bat_radius[b])), 2), round(float(np.median(toi_radius[k])), 2)],
+            "host_radius_over_2_share": [round(float((bat_radius[b] > 2).mean()), 3), round(float((toi_radius[k] > 2).mean()), 3)],
+            "duration_ratio_q10_50_90": [np.quantile(bat_ratio[b], [0.1, 0.5, 0.9]).round(3).tolist(),
+                                         np.quantile(toi_ratio[k], [0.1, 0.5, 0.9]).round(3).tolist()],
+            "duration_median": [round(float(np.median(bd)), 2), round(float(np.median(td)), 2)],
+        })
+        p_edges = np.arange(np.log10(lo), np.log10(hi) + 0.1, 0.1)
+        bcell = (np.clip(np.digitize(np.log10(bp), p_edges), 0, len(p_edges)) * len(radius_edges)
+                 + np.digitize(bat_radius[b], radius_edges))
+        tcell = (np.clip(np.digitize(np.log10(tp), p_edges), 0, len(p_edges)) * len(radius_edges)
+                 + np.digitize(toi_radius[k], radius_edges))
+        bcount = pd.Series(bcell).value_counts()
+        tcount = pd.Series(tcell).value_counts()
+        weights = pd.Series(bcell).map(lambda c: tcount.get(c, 0) / bcount[c]).to_numpy(dtype=float)
+        entry["batman_duration_median_reweighted"] = round(_weighted_median(bd, weights), 2)
+        entry["toi_share_with_batman_match"] = round(float(tcount[tcount.index.isin(bcount.index)].sum() / k.sum()), 3)
+        small = bat_radius[b] <= 2.0
+        entry["batman_duration_median_hosts_le_2rsun"] = round(float(np.median(bd[small])), 2) if small.any() else None
+        out.append(entry)
+    return out
+
+
 def cutouts(table: pd.DataFrame) -> pd.DataFrame:
     """Single-transit cutouts (shape and raw) from window rows with events."""
     out = []
@@ -104,10 +168,39 @@ def cutouts(table: pd.DataFrame) -> pd.DataFrame:
             if shape is None:
                 continue
             recentred = _shape(flux, observed, slots, c + _offset(flux, observed, c, d), d)
+            fc, fd = _fit(flux, observed, c, d)
+            fitted = _shape(flux, observed, slots, fc, fd)
             out.append({"category": row["category"], "source": row["source"], "snr": float(e["snr"]),
                         "duration_h": d * 0.5, "shape": shape, "raw": raw,
-                        "recentred": recentred if recentred is not None else shape})
+                        "recentred": recentred if recentred is not None else shape,
+                        "fitted": fitted if fitted is not None else shape,
+                        "fit_offset_h": (fc - c) * 0.5, "fit_duration_ratio": fd / d})
     return pd.DataFrame(out)
+
+
+def _fit(flux: np.ndarray, observed: np.ndarray, c: float, d: float) -> tuple[float, float]:
+    """Centre and duration (slots) of the box that best fits the dip near c.
+
+    Offsets up to half the given duration in half-slot steps, durations 0.6-1.6 times the
+    given one; the score is the box's depth below the local median (1-2.5 durations away)
+    times the square root of its observed slots.
+    """
+    n = len(flux)
+    slots = np.arange(n) + 0.5
+    ring = observed & (np.abs(slots - c) >= d) & (np.abs(slots - c) <= 2.5 * d)
+    base = float(np.median(flux[ring])) if ring.sum() >= 4 else 0.0
+    cum = np.concatenate([[0.0], np.cumsum(np.where(observed, flux - base, 0.0))])
+    cnt = np.concatenate([[0], np.cumsum(observed)])
+    cc, dd = np.meshgrid(c + np.arange(-d / 2, d / 2 + 0.25, 0.5), np.maximum(d * np.arange(0.6, 1.65, 0.1), 1.0),
+                         indexing="ij")
+    lo = np.clip(np.round(cc - dd / 2).astype(int), 0, n)
+    hi = np.clip(np.round(cc + dd / 2).astype(int), 0, n)
+    k = cnt[hi] - cnt[lo]
+    score = np.where(k >= np.maximum(1, (hi - lo) // 2), -(cum[hi] - cum[lo]) / np.sqrt(np.maximum(k, 1)), -np.inf)
+    i, j = np.unravel_index(int(np.argmax(score)), score.shape)
+    if not np.isfinite(score[i, j]):
+        return c, d
+    return float(cc[i, j]), float(dd[i, j])
 
 
 def _offset(flux: np.ndarray, observed: np.ndarray, c: float, d: float) -> float:
@@ -183,6 +276,11 @@ def classify(cut: pd.DataFrame, a: str, b: str, rng: np.random.Generator, detail
     levelled = rec - np.median(rec[:, wings], axis=1, keepdims=True)
     depth = -levelled[:, SHAPE_BINS // 2 - 3:SHAPE_BINS // 2 + 3].mean(axis=1, keepdims=True)
     features["levelled"] = np.where(depth > 0, levelled / np.where(depth > 0, depth, 1.0), 0.0)
+    fit = np.stack(data["fitted"].to_numpy())
+    fit = fit - np.median(fit[:, wings], axis=1, keepdims=True)
+    fit_depth = -fit[:, SHAPE_BINS // 2 - 3:SHAPE_BINS // 2 + 3].mean(axis=1, keepdims=True)
+    features["fitted"] = np.stack(data["fitted"].to_numpy())
+    features["fitted_levelled"] = np.where(fit_depth > 0, fit / np.where(fit_depth > 0, fit_depth, 1.0), 0.0)
     for name, x in (features.items() if detail else ((k, features[k]) for k in ("shape", "raw"))):
         folds = StratifiedKFold(5, shuffle=True, random_state=0)
         prob = cross_val_predict(HistGradientBoostingClassifier(max_iter=300, random_state=0), x, y, cv=folds,
@@ -198,6 +296,13 @@ def classify(cut: pd.DataFrame, a: str, b: str, rng: np.random.Generator, detail
         result["phase_bins"] = centres.round(3).tolist()
         result["levelled_bin_auc"] = [round(float(roc_auc_score(y, features["levelled"][:, i])), 3)
                                       for i in range(SHAPE_BINS)]
+        result["mean_fitted_levelled"] = {c: features["fitted_levelled"][y == (1 if c == a else 0)].mean(axis=0)
+                                          .round(4).tolist() for c in (a, b)}
+        result["fit"] = {c: {"offset_h_abs_q50_90": np.quantile(np.abs(data[data["category"] == c]["fit_offset_h"]),
+                                                                [0.5, 0.9]).round(2).tolist(),
+                             "duration_ratio_q10_50_90": np.quantile(data[data["category"] == c]["fit_duration_ratio"],
+                                                                     [0.1, 0.5, 0.9]).round(2).tolist()}
+                         for c in (a, b)}
         result["mean_levelled"] = {c: features["levelled"][y == (1 if c == a else 0)].mean(axis=0).round(4).tolist()
                                    for c in (a, b)}
         result["by_source"] = {}
@@ -220,11 +325,11 @@ def main() -> None:
 
     files = sorted(args.data.glob("data/train/*.parquet")) or download(config.FINETUNE_REPO, "train", args.data)
     meta = pd.concat([pq.read_table(f, columns=["category", "inj_model", "inj_period_d", "inj_duration_h", "inj_depth_ppm",
-                                                "inj_ecc", "inj_deep"]).to_pandas() for f in files], ignore_index=True)
+                                                "inj_ecc", "inj_deep", "radius"]).to_pandas() for f in files], ignore_index=True)
     tois = pd.read_parquet(hf_hub_download(REFERENCE_REPO, "toi_ephemerides.parquet", repo_type="dataset",
                                            token=os.environ.get("HF_TOKEN")))
     tois = tois[tois["disposition"].isin(["PC", "CP", "KP"]) & (tois["period_d"] > 0)]
-    result = {"distributions": distributions(meta, tois)}
+    result = {"distributions": distributions(meta, tois), "durations": durations(meta, tois)}
 
     rng = np.random.default_rng(0)
     columns = ["category", "source", "flux_z", "flags", "events"]
