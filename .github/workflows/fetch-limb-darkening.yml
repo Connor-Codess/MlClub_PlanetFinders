@@ -1,0 +1,35 @@
+# Fetches the Claret (2017) TESS limb-darkening table used by v3 batman injections and keeps it as
+# an artifact ("ld-table"). The table is then committed to finetune_dataset/data/, so dataset builds
+# do not depend on CDS being reachable. Run it from the Actions tab.
+
+name: Fetch limb-darkening table
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [reference-catalogs]
+    paths:
+      - "finetune_dataset/limb_darkening.py"
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: finetune_dataset
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - run: pip install numpy pandas pyarrow requests astropy astroquery
+      - run: python -m finetune_dataset.limb_darkening --fetch --out build/ld/ld_claret2017_tess.parquet
+      - run: python -c "import pandas as pd; t = pd.read_parquet('build/ld/ld_claret2017_tess.parquet'); print(t.describe()); print(t.head(20).to_string())"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ld-table
+          path: build/ld/ld_claret2017_tess.parquet
+          retention-days: 30

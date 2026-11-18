@@ -2,7 +2,8 @@
 
 What it does
     fetch()        downloads the Claret (2017, A&A 600, A30; VizieR J/A+A/600/A30) tables
-                   with astroquery, finds the quadratic-law table computed from ATLAS models
+                   (CDS archive files read with their ReadMe, else astroquery), finds the
+                   quadratic-law table computed from ATLAS models
                    (columns logg, Teff, Z, xi and two coefficients), keeps solar metallicity
                    and xi = 2 km/s, and writes it as a small Parquet table.
     load_table()   reads that table back (or returns None).
@@ -15,9 +16,11 @@ Why
     inj_ld_source = "kipping2013" instead of "claret2017".
 
 Outputs
-    ld_claret2017_tess.parquet with columns teff, logg, u1, u2 (written by --fetch)
+    ld_claret2017_tess.parquet with columns teff, logg, u1, u2 (written by --fetch). A copy is
+    kept in finetune_dataset/data/ so builds do not depend on VizieR being reachable;
+    materialize.py uses the plan directory's copy first, then that one.
 
-How to run (needs network access to VizieR, so it runs in GitHub Actions)
+How to run (needs network access to CDS, so it runs in GitHub Actions: fetch-limb-darkening.yml)
     python -m finetune_dataset.limb_darkening --fetch --out build/finetune/ld_claret2017_tess.parquet
 """
 
@@ -60,16 +63,69 @@ def _pick_quadratic(tables) -> pd.DataFrame | None:
     return best
 
 
-def fetch(out: Path) -> bool:
+def _from_cds_ftp(work: Path) -> pd.DataFrame | None:
+    """Read the quadratic ATLAS table from the CDS archive files and their ReadMe."""
+    import requests
+    from astropy.io import ascii as astro_ascii
+
+    base = f"https://cdsarc.cds.unistra.fr/ftp/{CATALOG}/"
+    work.mkdir(parents=True, exist_ok=True)
+    readme = requests.get(base + "ReadMe", timeout=60)
+    readme.raise_for_status()
+    (work / "ReadMe").write_text(readme.text)
+    summary = readme.text.split("File Summary:")[1].split("Byte-by-byte")[0] if "File Summary:" in readme.text else ""
+    candidates = []
+    for line in summary.splitlines():
+        parts = line.split()
+        if not parts or not parts[0].startswith("table"):
+            continue
+        text = line.lower()
+        LOG.info("CDS file: %s", line.strip())
+        if "quadratic" in text and ("atlas" in text or "plane" in text):
+            candidates.append((0 if "lsm" in text or "least" in text else 1, parts[0]))
+    for _, name in sorted(candidates):
+        data = requests.get(base + name, timeout=300)
+        if data.status_code != 200 and not name.endswith(".gz"):
+            data = requests.get(base + name + ".gz", timeout=300)
+            name = name + ".gz"
+        data.raise_for_status()
+        (work / name).write_bytes(data.content)
+        table = astro_ascii.read(str(work / name), readme=str(work / "ReadMe"), format="cds")
+        frame = _pick_quadratic([_with_meta(table, "quadratic atlas " + name)])
+        if frame is not None:
+            LOG.info("using %s", name)
+            return frame
+    return None
+
+
+def _with_meta(table, text: str):
+    table.meta = {**table.meta, "description": text}
+    return table
+
+
+def _from_astroquery() -> pd.DataFrame | None:
     from astroquery.vizier import Vizier
 
     vizier = Vizier(row_limit=-1, columns=["**"])
-    tables = vizier.get_catalogs(CATALOG)
-    frame = _pick_quadratic(tables)
+    return _pick_quadratic(vizier.get_catalogs(CATALOG))
+
+
+def fetch(out: Path) -> bool:
+    frame = None
+    for name, method in (("CDS archive files", lambda: _from_cds_ftp(out.parent / "ld_cds")),
+                         ("astroquery VizieR", _from_astroquery)):
+        try:
+            frame = method()
+        except Exception as exc:  # noqa: BLE001 - try the next source, log why this one failed
+            LOG.warning("%s failed: %s", name, exc)
+            frame = None
+        if frame is not None:
+            LOG.info("limb-darkening table from %s", name)
+            break
     if frame is None:
         LOG.warning("no quadratic ATLAS table found in %s", CATALOG)
         return False
-    frame = frame[np.isclose(frame["z"], SOLAR_Z) & np.isclose(frame["xi"], MICROTURBULENCE)]
+    frame = frame[np.isclose(frame["z"].astype(float), SOLAR_Z) & np.isclose(frame["xi"].astype(float), MICROTURBULENCE)]
     frame = frame[["teff", "logg", "u1", "u2"]].dropna().astype(float)
     if frame.empty:
         LOG.warning("quadratic table has no rows at Z = 0, xi = 2 km/s")

@@ -210,6 +210,8 @@ def main() -> None:
     templates = load_templates(args.plan / "templates.parquet")
     global LD_TABLE
     LD_TABLE = load_table(args.plan / "ld_claret2017_tess.parquet")
+    if LD_TABLE is None:
+        LD_TABLE = load_table(Path(__file__).parent / "data" / "ld_claret2017_tess.parquet")
     LOG.info("limb darkening for v3 injections: %s", "Claret 2017 table" if LD_TABLE is not None
              else "Kipping 2013 draw (no table in the plan directory)")
     args.out.mkdir(parents=True, exist_ok=True)
