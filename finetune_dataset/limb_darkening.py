@@ -43,7 +43,7 @@ MICROTURBULENCE = 2.0
 
 
 def _pick_quadratic(tables) -> pd.DataFrame | None:
-    """The quadratic ATLAS table: logg, Teff, Z, xi plus exactly two coefficient columns."""
+    """The quadratic ATLAS table: logg, Teff, Z, xi plus two coefficient columns (least-squares fit)."""
     best = None
     for table in tables:
         cols = {c.lower(): c for c in table.colnames}
@@ -53,8 +53,12 @@ def _pick_quadratic(tables) -> pd.DataFrame | None:
         needed = ("logg", "teff", "z", "xi")
         if not all(n in cols for n in needed):
             continue
-        coeff = [c for c in table.colnames if c.lower() not in needed and c.lower() not in ("met", "mod", "sys")]
+        coeff = [c for c in table.colnames if c.lower() not in needed
+                 and c.lower() not in ("met", "mod", "sys", "recno", "chi2", "type")]
         coeff = [c for c in coeff if np.issubdtype(np.asarray(table[c]).dtype, np.floating)]
+        least_squares = [c for c in coeff if c.upper().endswith("LSM")]
+        if len(least_squares) == 2:
+            coeff = least_squares        # Claret's least-squares fit (aLSM, bLSM), not flux conservation
         is_quadratic = "quadratic" in meta and "atlas" in meta
         if len(coeff) == 2 and is_quadratic:
             frame = table.to_pandas()
