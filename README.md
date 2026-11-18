@@ -36,6 +36,8 @@ All light curves are on Hugging Face under [nyu-planet-finders](https://huggingf
 | [`docs/finetune_dataset_build_log.md`](docs/finetune_dataset_build_log.md) | Every decision, number and change of the fine-tuning build |
 | [`experiments/finetune_mix/`](experiments/finetune_mix/README.md) | Data mix experiments: which lc-finetune rows train the best detector, scored on lc-eval val |
 | [`.github/workflows/finetune-mix-experiments.yml`](.github/workflows/finetune-mix-experiments.yml) | Runs those experiments on GitHub's free CPU runners |
+| [`experiments/proxy_pretrain/`](experiments/proxy_pretrain/README.md) | Masked-reconstruction pretraining of the experiment model on lc-pretrain (three data variants) |
+| [`.github/workflows/proxy-pretrain.yml`](.github/workflows/proxy-pretrain.yml) | Runs the proxy pretraining |
 | [`tests/`](tests) | Offline tests: `python -m pytest tests -q` |
 | `tessLightCurveData/`, `kplr001430207-2012179063303_llc.csv` | Early sample light curves |
 

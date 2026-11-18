@@ -25,6 +25,8 @@ light curves, then fine-tuned to output a transit probability per 4-hour patch.
 | `.github/workflows/build-finetune-dataset.yml` | Runs that build; triggered by pushing `finetune_dataset/build_request.json` |
 | `experiments/finetune_mix/` | Data mix experiments on lc-finetune, scored on lc-eval val; `config.py` holds every number |
 | `.github/workflows/finetune-mix-experiments.yml` | Runs them; triggered by pushing `experiments/finetune_mix/run_request.json` |
+| `experiments/proxy_pretrain/` | Masked-reconstruction pretraining of the small experiment model on lc-pretrain |
+| `.github/workflows/proxy-pretrain.yml` | Runs it; triggered by pushing `experiments/proxy_pretrain/run_request.json` |
 | `dataset_cards/` | Cards of the source datasets; `publish-dataset-cards.yml` uploads them |
 | `tests/` | Offline tests (`python -m pytest tests -q`) |
 | `docs/` | Handoff notes and the build guide |
@@ -40,6 +42,8 @@ light curves, then fine-tuned to output a transit probability per 4-hour patch.
 - Held-out stars must be physically absent from the pretraining repo.
 - Rank model and data variants on the injection-recovery validation set, never on pretraining loss.
 - lc-eval holds held-out stars only; every benchmark star is excluded from lc-finetune. Keep it so.
+- lc-eval keeps the v2 injection physics (`finetune_dataset/config.py` INJ_PHYSICS) so experiment waves stay
+  comparable; changes to injections go into lc-finetune only unless a wave deliberately resets the baseline.
 
 ## Working notes
 
