@@ -211,3 +211,33 @@ class TestRealism:
         assert entry["duration_ratio_q10_50_90"][0][1] == pytest.approx(0.8, abs=0.01)
         assert entry["duration_ratio_q10_50_90"][1][1] == pytest.approx(0.8, abs=0.01)
         assert entry["batman_duration_median_reweighted"] == pytest.approx(entry["duration_median"][1], rel=0.05)
+
+
+class TestBenchmark:
+    def test_signal_scores_follow_the_protocol(self):
+        from experiments.finetune_mix.benchmark import metrics, signal_scores
+
+        patch = np.zeros((3, config.N_PATCHES), np.float32)
+        patch[0, 10], patch[1, 20], patch[2, 31] = 0.9, 0.5, 0.8
+        observed = np.ones((3, config.WINDOW_SLOTS), np.uint8)
+        observed[2, 30 * config.PATCH_SLOTS:31 * config.PATCH_SLOTS] = 0
+        meta = pd.DataFrame({"split": "astronet_dr24", "category": ["PC", "PC", "AFP"],
+                             "benchmark_tce_id": ["a", "a", "b"]})
+        transits = pd.DataFrame({"row": [0, 1, 2, 2], "center_slot": [10 * 8 + 3, 20 * 8 + 1, 30 * 8 + 2, 40 * 8 + 2],
+                                 "visible": [True, True, True, True]})
+        s = signal_scores(patch, observed, meta, transits, threshold=0.6).set_index("benchmark_tce_id")
+        assert s.loc["a", "score"] == pytest.approx(0.7)
+        assert s.loc["a", "transits"] == 2 and bool(s.loc["a", "detected"])
+        assert s.loc["b", "transits"] == 1 and s.loc["b", "score"] == pytest.approx(0.0)
+        assert not bool(s.loc["b", "detected"])
+        m = metrics("astronet_dr24", s.reset_index())
+        assert m["auc"] == pytest.approx(1.0) and m["detected_by_label"]["PC"] == 1.0
+
+    def test_auc_matches_a_direct_count(self):
+        from experiments.finetune_mix.benchmark import roc_auc
+
+        rng = np.random.default_rng(0)
+        y = rng.random(200) < 0.3
+        s = rng.normal(size=200) + y
+        direct = np.mean([a > b for a in s[y] for b in s[~y]])
+        assert roc_auc(y, s) == pytest.approx(direct)

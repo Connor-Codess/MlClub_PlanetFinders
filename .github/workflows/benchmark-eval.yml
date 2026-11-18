@@ -1,0 +1,68 @@
+# Scores the seeds of one fine-tuning arm on lc-benchmarks, the published papers' test sets
+# (experiments/finetune_mix/benchmark.py), and compares with the papers' own numbers.
+#
+# Start it by editing experiments/finetune_mix/benchmark_request.json (run_id of a
+# finetune-mix-experiments run, arm name) and pushing, or from the Actions tab.
+# Requires the HF_TOKEN repository secret (read access to the private lc-benchmarks).
+# Output: artifact "benchmark-<arm>" (benchmark.md, benchmark.json, signals.parquet).
+
+name: Benchmark evaluation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, reference-catalogs]
+    paths:
+      - "experiments/finetune_mix/benchmark_request.json"
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHON_VERSION: "3.11"
+  REQUEST: experiments/finetune_mix/benchmark_request.json
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: experiments/finetune_mix/requirements.txt
+      - run: pip install -r experiments/finetune_mix/requirements.txt pytest
+      - run: python -m pytest tests/test_finetune_mix.py -q
+      - id: request
+        run: |
+          echo "run_id=$(python -c "import json; print(json.load(open('$REQUEST'))['run_id'])")" >> "$GITHUB_OUTPUT"
+          echo "arm=$(python -c "import json; print(json.load(open('$REQUEST'))['arm'])")" >> "$GITHUB_OUTPUT"
+      - name: Fetch the arm's runs and the lc-eval val meta from run ${{ steps.request.outputs.run_id }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.request.outputs.run_id }}
+          ARM: ${{ steps.request.outputs.arm }}
+        run: |
+          mkdir -p build/runs
+          gh run download "$RUN_ID" -R "${{ github.repository }}" -n eval-meta -D build/eval-meta
+          for name in $(gh api "repos/${{ github.repository }}/actions/runs/$RUN_ID/artifacts?per_page=100" --paginate \
+                          --jq ".artifacts[].name | select(startswith(\"result-$ARM-s\"))"); do
+            gh run download "$RUN_ID" -R "${{ github.repository }}" -n "$name" -D "build/runs/$name"
+          done
+          ls build/runs
+          test -n "$(ls build/runs)"
+      - name: Score ${{ steps.request.outputs.arm }} on lc-benchmarks
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python -m experiments.finetune_mix.benchmark --runs build/runs --eval-meta build/eval-meta/meta.parquet \
+            --data build/bench --out build/benchmark --arm "${{ steps.request.outputs.arm }}"
+          cat build/benchmark/benchmark.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-${{ steps.request.outputs.arm }}
+          path: build/benchmark
+          retention-days: 90
