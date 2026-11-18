@@ -8,9 +8,16 @@ What it does
     stack_regime_inj          short-period injections (P < 10 d) with per-transit SNR < 4
                               and combined SNR >= 7: visible only when transits are combined
     single_transit_inj        injected windows with one visible transit
+    single_transit_faint_inj  the same, with combined SNR 4-10
     real_short_faint          real short-period windows with no transit at SNR 4 but stacked SNR >= 4
     real_long_single          real long-period windows with one visible transit
     real_long_deep            real long-period windows with stacked SNR >= 25
+    decision                  the pre-registered rule of wave 2: per arm, the mean of faint recall
+                              (combined SNR 4-10), stack_regime_inj and single_transit_faint_inj,
+                              all at 1% random-window false alarms; an arm qualifies when, against
+                              config.REFERENCE_ARM, neg1_real_long does not drop by more than twice
+                              the standard error of the difference of the seed means and the EB false
+                              alarm rate rises by at most one point
     neg1_*                    recall and EB false alarms with the threshold set so that 1% of
                               random and EB windows together raise an alarm (a matched comparison
                               for arms that fire more on EBs)
@@ -62,6 +69,7 @@ def subsets(meta: pd.DataFrame) -> dict[str, np.ndarray]:
     return {
         "stack_regime_inj": inj & (period < 10) & (per_transit < 4) & (combined >= 7),
         "single_transit_inj": inj & (visible == 1),
+        "single_transit_faint_inj": inj & (visible == 1) & (combined >= 4) & (combined < 10),
         "real_short_faint": short & (best < 4) & (stacked >= 4),
         "real_short_bright": short & (best >= 4),
         "real_long_single": long_ & (visible == 1),
@@ -118,6 +126,36 @@ def run_values(scores: dict, meta: pd.DataFrame, masks: dict[str, np.ndarray]) -
     return out
 
 
+def decision(frame: pd.DataFrame) -> dict:
+    """Wave 2's pre-registered ranking, computed from the per-run values."""
+    frame = frame.assign(score=frame[["fa1_faint", "stack_regime_inj", "single_transit_faint_inj"]].mean(axis=1))
+    reference = frame[frame["arm"] == config.REFERENCE_ARM]
+    if reference.empty:
+        return {"note": f"reference arm {config.REFERENCE_ARM} has no runs"}
+    ref_long, ref_long_se = reference["neg1_real_long"].mean(), reference["neg1_real_long"].std(ddof=1) / np.sqrt(len(reference))
+    ref_eb = reference["eb_false_alarm"].mean() if "eb_false_alarm" in reference else reference["fa1_eb_false_alarm"].mean()
+    arms = {}
+    for arm, g in frame.groupby("arm"):
+        se = np.sqrt((g["neg1_real_long"].std(ddof=1) / np.sqrt(len(g))) ** 2 + ref_long_se ** 2) if len(g) > 1 else np.nan
+        drop = ref_long - g["neg1_real_long"].mean()
+        eb_rise = g["fa1_eb_false_alarm"].mean() - ref_eb
+        long_ok = bool(drop <= 2 * se) if np.isfinite(se) else bool(drop <= 0)
+        arms[arm] = {"score": round(float(g["score"].mean()), 4),
+                     "score_std": None if len(g) < 2 else round(float(g["score"].std(ddof=1)), 4),
+                     "seeds": int(len(g)),
+                     "real_long_matched_change": round(float(-drop), 4),
+                     "real_long_allowed_drop": None if not np.isfinite(se) else round(float(2 * se), 4),
+                     "eb_false_alarm_change": round(float(eb_rise), 4),
+                     "qualifies": long_ok and bool(eb_rise <= 0.01)}
+    ranked = sorted((a for a in arms if arm_is_model(a)), key=lambda a: -arms[a]["score"])
+    winner = next((a for a in ranked if arms[a]["qualifies"]), None)
+    return {"reference": config.REFERENCE_ARM, "winner": winner, "ranking": ranked, "arms": arms}
+
+
+def arm_is_model(arm: str) -> bool:
+    return arm not in ("box_filter", "classical")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--results", type=Path, required=True)
@@ -151,6 +189,7 @@ def main() -> None:
         result["hiding_test"] = {arm: {c: round(float(g[c].mean()), 4) for c in
                                        ("with_siblings", "alone", "stack_with_siblings", "stack_alone")}
                                  | {"windows": int(g["windows"].iloc[0])} for arm, g in h.groupby("arm")}
+    result["decision"] = decision(frame)
     (args.out / "extra.json").write_text(json.dumps(result, indent=1))
     for arm, values in arms.items():
         print(arm.ljust(24), " ".join(f"{c}={v[0]:.3f}" for c, v in values.items() if not c.startswith("fa")))
