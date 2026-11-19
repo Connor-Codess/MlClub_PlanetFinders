@@ -105,6 +105,42 @@
    "signals": 1013
   },
   "salinas2025": {
+   "auc_all_vs_tess_nontransit_signals": [
+    0.9679,
+    0.0057
+   ],
+   "auc_all_vs_eval_random_windows": [
+    0.9607,
+    0.0054
+   ],
+   "auc_all_vs_eval_eb_windows": [
+    0.9376,
+    0.0078
+   ],
+   "auc_single_vs_tess_nontransit_signals": [
+    0.9855,
+    0.0043
+   ],
+   "auc_single_vs_eval_random_windows": [
+    0.9806,
+    0.0055
+   ],
+   "auc_single_vs_eval_eb_windows": [
+    0.963,
+    0.0062
+   ],
+   "auc_periodic_vs_tess_nontransit_signals": [
+    0.9588,
+    0.0051
+   ],
+   "auc_periodic_vs_eval_random_windows": [
+    0.9511,
+    0.0041
+   ],
+   "auc_periodic_vs_eval_eb_windows": [
+    0.9258,
+    0.0078
+   ],
    "detected_by_label": {
     "multi_planet_candidate": 0.1429,
     "periodic_candidate": 0.7404,
@@ -122,10 +158,10 @@
   "astronet_dr24": [
    {
     "signals": 1559,
-    "auc": 0.8571164838115698,
-    "ap": 0.6023785220657623,
+    "auc": 0.8571176825993555,
+    "ap": 0.6023797499302389,
     "auc_pc_vs_afp": 0.8376964613589564,
-    "auc_pc_vs_ntp": 0.9325348039387872,
+    "auc_pc_vs_ntp": 0.9325406582598617,
     "detected_by_label": {
      "AFP": 0.0982,
      "NTP": 0.008,
@@ -305,7 +341,16 @@
      "multi_planet_candidate": 7,
      "periodic_candidate": 122,
      "single_candidate": 80
-    }
+    },
+    "auc_all_vs_tess_nontransit_signals": 0.9613444063465575,
+    "auc_all_vs_eval_random_windows": 0.9545592105263158,
+    "auc_all_vs_eval_eb_windows": 0.9286767589614872,
+    "auc_single_vs_tess_nontransit_signals": 0.9812556766575841,
+    "auc_single_vs_eval_random_windows": 0.9759878125,
+    "auc_single_vs_eval_eb_windows": 0.9565368852459016,
+    "auc_periodic_vs_tess_nontransit_signals": 0.9531722279298998,
+    "auc_periodic_vs_eval_random_windows": 0.9468872950819672,
+    "auc_periodic_vs_eval_eb_windows": 0.9170048374092986
    },
    {
     "signals": 209,
@@ -318,7 +363,16 @@
      "multi_planet_candidate": 7,
      "periodic_candidate": 122,
      "single_candidate": 80
-    }
+    },
+    "auc_all_vs_tess_nontransit_signals": 0.9713396694609946,
+    "auc_all_vs_eval_random_windows": 0.9645246411483254,
+    "auc_all_vs_eval_eb_windows": 0.9421013412816691,
+    "auc_single_vs_tess_nontransit_signals": 0.98986148955495,
+    "auc_single_vs_eval_random_windows": 0.986665625,
+    "auc_single_vs_eval_eb_windows": 0.9687704918032787,
+    "auc_periodic_vs_tess_nontransit_signals": 0.9600735545926952,
+    "auc_periodic_vs_eval_random_windows": 0.9514327868852459,
+    "auc_periodic_vs_eval_eb_windows": 0.9282921257726418
    },
    {
     "signals": 209,
@@ -331,7 +385,16 @@
      "multi_planet_candidate": 7,
      "periodic_candidate": 122,
      "single_candidate": 80
-    }
+    },
+    "auc_all_vs_tess_nontransit_signals": 0.9711180353658484,
+    "auc_all_vs_eval_random_windows": 0.9631107655502392,
+    "auc_all_vs_eval_eb_windows": 0.9421209506627971,
+    "auc_single_vs_tess_nontransit_signals": 0.9853655767484105,
+    "auc_single_vs_eval_random_windows": 0.9790625,
+    "auc_single_vs_eval_eb_windows": 0.9638319672131147,
+    "auc_periodic_vs_tess_nontransit_signals": 0.9632003692619229,
+    "auc_periodic_vs_eval_random_windows": 0.9550352459016394,
+    "auc_periodic_vs_eval_eb_windows": 0.932067992475141
    }
   ]
  },

@@ -11,7 +11,7 @@ pretraining, deep injections and realism checks").
 | `extra.json` | `analyze.py`: subsets, matched false alarms, false-alarm curves (`fa<rate>_*`), transit-hiding test and the pre-registered `decision` |
 | `pretraining.json` | Proxy pretraining runs: settings and validation curves |
 | `realism.json` | `realism.py` on the published lc-finetune v3: distributions, per-star durations, real-versus-injection classifiers |
-| `benchmark.md`, `benchmark.json` | `benchmark.py`: the winning arm on lc-benchmarks against the published papers (run 44392254586) |
+| `benchmark.md`, `benchmark.json` | `benchmark.py`: the winning arm on lc-benchmarks against the published papers (run 44442425451; the first run, 44392254586, lacked the Salinas AUCs) |
 
 Each run's weights and per-window scores are in its `result-<arm>-s<seed>` artifact (30 days).
 
@@ -150,14 +150,14 @@ AUC 0.56, below the 0.58 of the transplant control (real profiles in other stars
 central-transit duration, batman durations are 0.94-0.96 against 0.89-0.93 for confirmed Kepler planets in every period
 bin; the long-period TOI gap comes from duotransit placeholder periods. Details in `realism.json` and the paper.
 
-## Against the published papers (lc-benchmarks, `pt_mix-r00-deep-all`, 3 seeds)
+## Against the published papers (lc-benchmarks, `pt_mix-r00-deep-all`, 3 seeds, run 44442425451)
 
 | Benchmark | Paper | Their data | Their result | Ours (mean ± sd over seeds) | Test set covered |
 |---|---|---|---|---|---|
 | `astronet_dr24` | Shallue & Vanderburg 2018 (AstroNet) | Kepler DR24, PC vs AFP+NTP | AUC 0.988; accuracy 0.960 at threshold 0.5 (1,523 test TCEs) | AUC 0.860 ± 0.002; AP 0.608 ± 0.006; PC vs NTP AUC 0.931 ± 0.002; PC vs AFP AUC 0.841 ± 0.003 | 1,559 of 1,574 (99%) |
 | `astronet_triage` | Yu et al. 2019 (Astronet-Triage) | TESS QLP sectors 1-5 | Triage (PC+EB vs J): AUC 0.992, AP 0.970. Vetting (PC vs rest): AUC 0.984, AP 0.693 | Triage: AUC 0.579 ± 0.021, AP 0.587 ± 0.010. Vetting: AUC 0.908 ± 0.016, AP 0.568 ± 0.012 | 660 of 1,658 (40%) |
 | `astronet_triage_v2` | Tey et al. 2023 (Astronet-Triage-v2) | TESS QLP cycles 1-3, E vs rest | AUC-PR 0.965; recall 97.2% at precision 75.7% | AUC-PR 0.313 ± 0.005; AUC 0.425 ± 0.012 | 1,013 of 2,516 (40%) |
-| `salinas2025` | Salinas et al. 2025 | TESS-SPOC FFI sectors 1-26 | AUC 0.88, F1 0.82 on an unreleased 10% split; 213 published candidates | Candidates detected: multi_planet_candidate 14.3%, periodic_candidate 74.0%, single_candidate 85.0% | 209 of 213 (98%) |
+| `salinas2025` | Salinas et al. 2025 | TESS-SPOC FFI sectors 1-26 | AUC 0.88, F1 0.82 on an unreleased 10% split; 213 published candidates | Candidates detected: multi_planet_candidate 14.3%, periodic_candidate 74.0%, single_candidate 85.0%. AUC against TESS non-transit signals 0.968 ± 0.006 (single 0.986 ± 0.004, periodic 0.959 ± 0.005); against lc-eval random windows 0.961 ± 0.005 | 209 of 213 (98%) |
 
 Detection rate by label at 1% random-window false alarms on lc-eval val:
 
@@ -194,3 +194,11 @@ How to read this:
   are almost fully covered.
 - **Salinas et al. 2025 is the closest task** (a single-transit search of TESS-SPOC FFIs). At the experiments'
   operating point the winner detects 85.0% of their single-transit candidates and 74.0% of their periodic candidates.
+  They publish candidates only, so an AUC needs negatives from elsewhere: on the peak score (highest probability
+  within one patch of a transit, the tolerance every experiment uses), their candidates rank above TESS
+  non-transit signals from the triage benchmarks at AUC 0.968 (single-transit 0.986, periodic 0.959) and above
+  lc-eval random windows at 0.961 (EB windows 0.938). Their own AUC of 0.88 was measured on their held-out
+  split, a different question, so the two are not directly comparable. On the exact mid-time patch alone the
+  AUC against TESS non-transit signals drops to about 0.81, mostly for single-transit candidates (median
+  probability 0.44 at the exact patch, 0.997 within one patch), whose published times are less precise than the
+  periodic candidates' fitted ephemerides.
