@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Planet Finders Galaxy</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    {"imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }}
+  </script>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <div id="labels"></div>
+
+  <header id="hud">
+    <h1>PLANET FINDERS</h1>
+    <p id="subtitle">Kepler stars the model flags as planet hosts</p>
+    <div id="search-wrap">
+      <input id="search" type="text" placeholder="Search KIC or Kepler name…" autocomplete="off" spellcheck="false">
+      <div id="search-results"></div>
+    </div>
+  </header>
+
+  <div id="legend">
+    <div class="legend-title">Model says planet / candidate</div>
+    <label><input type="checkbox" id="show-test" checked><span class="dot test"></span>Held-out test stars (honest score) <b id="n-test"></b></label>
+    <label><input type="checkbox" id="show-seen" checked><span class="dot pos"></span>Train / val stars (optimistic score) <b id="n-pos"></b></label>
+    <label><input type="checkbox" id="show-dis" checked><span class="dot dis"></span>Model: planet · catalog: candidate (held-out) <b id="n-dis"></b></label>
+    <div><span class="dot dim"></span>Other Kepler stars <b id="n-all"></b></div>
+    <div><span class="dot sun"></span>Sun</div>
+  </div>
+
+  <div id="help">Scroll&nbsp;zoom · Left-drag&nbsp;pan · Right-drag&nbsp;rotate · Click&nbsp;a&nbsp;green&nbsp;or&nbsp;purple&nbsp;star</div>
+
+  <div id="tooltip"></div>
+  <button id="back" class="holo-btn" hidden>◂ BACK TO GALAXY <span>Esc</span></button>
+  <div id="flash"></div>
+
+  <aside id="holo" hidden>
+    <div class="beam"></div>
+    <div class="holo-panel">
+      <div class="scan"></div>
+      <div id="holo-body"></div>
+    </div>
+  </aside>
+
+  <div id="loading">LOADING GALAXY…</div>
+  <script type="module" src="main.js"></script>
+</body>
+</html>
