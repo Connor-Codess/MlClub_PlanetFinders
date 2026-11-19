@@ -181,9 +181,11 @@ Detection rate by label at 1% random-window false alarms on lc-eval val:
 
 How to read this:
 
-- **It is not the same task.** The papers classify a signal they are given (period and epoch), mostly from
-  phase-folded views of the whole light curve. This model scores raw 27-day windows with no ephemeris; a signal's
-  score is its probability at the predicted mid-time patches, averaged over its visible transits.
+- **It is not the same task.** The three AstroNet papers classify a signal they are given (period and epoch) from
+  phase-folded views of all its transits. This model scores raw 27-day windows with no ephemeris; a signal's
+  score is its probability at the predicted mid-time patches, averaged over its visible transits. Salinas et al.
+  are closest: their transformer also reads unfolded single-sector FFI light curves, cut or padded to 1,000
+  points at 30-minute cadence (about 21 days).
 - **The model is a detector, not a vetter.** It was trained to call eclipsing binaries negative and has never seen
   the papers' other false-positive classes. Benchmarks whose positive class contains eclipsing binaries (Yu et al.
   triage, Tey et al. "E") come out near or below chance for that reason, not because transits are missed. The
