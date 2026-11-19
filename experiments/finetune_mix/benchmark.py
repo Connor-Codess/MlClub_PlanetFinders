@@ -278,6 +278,7 @@ def main() -> None:
 
     eval_meta = pd.read_parquet(args.eval_meta)
     random = (eval_meta["category"] == "negative_random").to_numpy()
+    args.out.mkdir(parents=True, exist_ok=True)
     per_seed: dict[str, list[dict]] = {}
     frames = []
     for run in sorted(p for p in args.runs.iterdir() if (p / "model.pt").exists()):
