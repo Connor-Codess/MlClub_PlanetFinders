@@ -1,5 +1,5 @@
 {
   "run_id": 44297108133,
   "arm": "pt_mix-r00-deep-all",
-  "note": "Wave 2 winner by the pre-registered rule (pretrained on pt_mix, no real planets in fine-tuning, deep injection tail, all hosts), scored on lc-benchmarks with all three seeds."
+  "note": "Rerun of the wave 2 winner on lc-benchmarks with peak scores (highest probability within one patch of each transit), ROC AUCs for Salinas et al.'s candidates against TESS non-transit signals and lc-eval windows, and saved patch outputs."
 }

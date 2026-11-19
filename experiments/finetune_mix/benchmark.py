@@ -17,8 +17,9 @@ What it does
                             EB and J). ROC AUC and average precision
         astronet_triage_v2  Tey et al. 2023: E against B, J, N and S (signals without a consensus
                             label are left out). Average precision (their AUC-PR) and ROC AUC
-        salinas2025         Salinas et al. 2025: every signal is a published candidate, so AUC is
-                            undefined; the share of candidates the model detects instead
+        salinas2025         Salinas et al. 2025: every signal is a published candidate, so the share
+                            the model detects, and ROC AUCs against TESS non-transit signals and
+                            lc-eval random and EB windows (see detection_aucs)
 
     "Detected" uses the operating point of the experiments: the threshold at which 1% of
     lc-eval val random windows raise an alarm, taken from each run's own scores.npz, and a
@@ -36,7 +37,9 @@ Why
 Outputs (in --out)
     benchmark.json   per benchmark: coverage, per-seed and mean metrics, detection rates by label
     benchmark.md     the comparison table with the papers' published numbers
-    signals.parquet  one row per covered signal and seed: score, detected, label
+    signals.parquet  one row per covered signal and seed: score, peak, detected, label
+    windows.parquet, patches-<run>.npz  every benchmark window's split, label and signal id, and its
+                     patch probabilities from each seed, for analyses beyond this script
 
 How to run
     python -m experiments.finetune_mix.benchmark --runs build/runs --data build/bench --out build/benchmark
@@ -136,12 +139,41 @@ def signal_scores(patch: np.ndarray, observed: np.ndarray, meta: pd.DataFrame, t
     visible = transits["visible"].to_numpy(dtype=bool) & (observed[rows, slot] > 0)
     rows, mid = rows[visible], slot[visible] // config.PATCH_SLOTS
     near = np.stack([patch[rows, np.clip(mid + k, 0, config.N_PATCHES - 1)] for k in (-1, 0, 1)], axis=1)
-    frame = pd.DataFrame({"row": rows, "prob": patch[rows, mid], "hit": near.max(axis=1) > threshold})
+    frame = pd.DataFrame({"row": rows, "prob": patch[rows, mid], "near": near.max(axis=1),
+                          "hit": near.max(axis=1) > threshold})
     frame = frame.join(meta, on="row")
     return (frame.groupby(["split", "benchmark_tce_id"])
-                 .agg(label=("category", "first"), score=("prob", "mean"), detected=("hit", "any"),
+                 .agg(label=("category", "first"), score=("prob", "mean"), peak=("near", "max"),
+                      detected=("hit", "any"),
                       transits=("prob", "size"))
                  .reset_index())
+
+
+def detection_aucs(scores: pd.DataFrame, eval_any: np.ndarray, eval_meta: pd.DataFrame) -> dict:
+    """ROC AUC of Salinas et al.'s candidates against negatives, on the detection score.
+
+    A candidate's score is its peak: the highest transit probability within one patch of any of its
+    visible transits. Two kinds of negative:
+        TESS non-transit signals in lc-benchmarks (Tey et al. J, N and S; Yu et al. J), scored the
+        same way at their own catalogued times
+        lc-eval val random and EB windows, scored by their highest patch anywhere in the window, the
+        quantity the experiments' false-alarm threshold is set on; this is the ROC curve of the
+        detection rates reported at 1% false alarms
+    """
+    sal = scores[scores["split"] == "salinas2025"]
+    junk = scores[((scores["split"] == "astronet_triage_v2") & scores["label"].isin(["J", "N", "S"]))
+                  | ((scores["split"] == "astronet_triage") & (scores["label"] == "J"))]["peak"].to_numpy()
+    cat = eval_meta["category"].to_numpy()
+    negatives = {"tess_nontransit_signals": junk, "eval_random_windows": eval_any[cat == "negative_random"],
+                 "eval_eb_windows": eval_any[cat == "negative_eb"]}
+    out = {}
+    for group, pos in (("all", sal), ("single", sal[sal["label"] == "single_candidate"]),
+                       ("periodic", sal[sal["label"] == "periodic_candidate"])):
+        p = pos["peak"].to_numpy()
+        for name, neg in negatives.items():
+            y = np.r_[np.ones(len(p), bool), np.zeros(len(neg), bool)]
+            out[f"auc_{group}_vs_{name}"] = roc_auc(y, np.r_[p, neg])
+    return out
 
 
 def metrics(name: str, s: pd.DataFrame) -> dict:
@@ -208,7 +240,11 @@ def table(summary: dict, coverage: dict, arm: str) -> str:
         elif name == "astronet_triage_v2":
             ours = f"AUC-PR {_fmt(s['ap'])}; AUC {_fmt(s['auc'])}"
         else:
-            ours = "Candidates detected: " + ", ".join(f"{k} {v:.1%}" for k, v in s["detected_by_label"].items())
+            ours = ("Candidates detected: " + ", ".join(f"{k} {v:.1%}" for k, v in s["detected_by_label"].items())
+                    + f". AUC against TESS non-transit signals {_fmt(s.get('auc_all_vs_tess_nontransit_signals'))}"
+                    + f" (single {_fmt(s.get('auc_single_vs_tess_nontransit_signals'))},"
+                    + f" periodic {_fmt(s.get('auc_periodic_vs_tess_nontransit_signals'))});"
+                    + f" against lc-eval random windows {_fmt(s.get('auc_all_vs_eval_random_windows'))}")
         c = coverage[name]
         lines.append(f"| `{name}` | {paper} | {data} | {result} | {ours} | {c['covered']:,} of {c['signals']:,} "
                      f"({c['covered'] / c['signals']:.0%}) |")
@@ -251,11 +287,16 @@ def main() -> None:
         patch = predict_arrays(model, x, observed)
         scores = signal_scores(patch, observed, meta, transits, threshold).assign(run=run.name)
         frames.append(scores)
+        np.savez_compressed(args.out / f"patches-{run.name}.npz", patch=patch.astype(np.float16))
         for name, s in scores.groupby("split"):
-            per_seed.setdefault(name, []).append(metrics(name, s))
+            m = metrics(name, s)
+            if name == "salinas2025":
+                m.update(detection_aucs(scores, np.load(run / "scores.npz")["any_score"], eval_meta))
+            per_seed.setdefault(name, []).append(m)
         LOG.info("%s: threshold %.4f, %d signals scored", run.name, threshold, len(scores))
 
     all_scores = pd.concat(frames, ignore_index=True)
+    meta.to_parquet(args.out / "windows.parquet")
     coverage = {name: {"signals": int((targets["benchmark"] == name).sum()),
                        "covered": int(all_scores.loc[all_scores["split"] == name, "benchmark_tce_id"].nunique())}
                 for name in BENCHMARKS}
